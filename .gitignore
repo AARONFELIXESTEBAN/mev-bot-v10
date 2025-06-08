@@ -1,0 +1,17 @@
+# Dependencies
+/node_modules/
+/mempool-ingestion-service/node_modules/
+/mev-bot-v10/node_modules/
+
+# Compiled code (build output)
+/dist/
+/mempool-ingestion-service/dist/
+/mev-bot-v10/dist/
+
+# Environment variables
+.env
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log
