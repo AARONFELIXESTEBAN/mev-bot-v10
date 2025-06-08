@@ -1,5 +1,6 @@
 import { KeyManagementServiceClient, protos } from '@google-cloud/kms';
-import { ethers, utils as ethersUtils, providers, BigNumber, Signature } from 'ethers'; // Removed SignatureLike from root
+import { ethers, utils as ethersUtils, providers, BigNumber } from 'ethers'; // Removed Signature and SignatureLike from root
+import { SignatureLike } from 'ethers/lib/utils'; // Deep import for SignatureLike
 import { ConfigService } from '../config/configService'; // Adjust path
 import { getLogger } from '../logger/loggerService'; // Adjust path
 // elliptic is a good library for EC operations, including signature parsing and public key recovery
@@ -100,7 +101,7 @@ export class KmsService {
         }
     }
 
-    public async signTransactionDigest(digestHex: string): Promise<Signature | null> {
+    public async signTransactionDigest(digestHex: string): Promise<SignatureLike | null> { // Updated return type
         const digestBuffer = Buffer.from(digestHex.slice(2), 'hex');
         logger.debug(`KmsService: Signing digest ${digestHex} for key ${this.keyPath}`);
 
@@ -151,7 +152,7 @@ export class KmsService {
             }
 
             // ethers.Signature object
-            const ethersSignature: ethersUtils.SignatureLike = { // Changed to ethersUtils.SignatureLike
+            const ethersSignature: SignatureLike = { // Use directly imported SignatureLike
                 r: r.toHexString(),
                 s: s.toHexString(),
                 recoveryParam: recoveryParam,
