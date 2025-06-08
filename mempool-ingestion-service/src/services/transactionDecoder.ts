@@ -1,36 +1,18 @@
+// In mempool-ingestion-service/src/services/transactionDecoder.ts
+
 import { ethers, utils as ethersUtils, providers as ethersProviders } from 'ethers';
 import logger from '../utils/logger';
 import UniswapV2Router02ABI from '../abis/UniswapV2Router02.json';
 import SushiSwapRouterABI from '../abis/SushiSwapRouter.json';
-// ERC20 ABI could be useful for decoding token details from paths, but not directly for router functions
-// import ERC20ABI from '../abis/ERC20.json';
+
+// +++ FIX: Added this import for the shared type.
+import { DecodedTransactionInput } from '../../../shared/types';
+
 
 interface RouterInterface {
     address: string;
     name: string;
     iface: ethersUtils.Interface;
-}
-
-export interface DecodedTransactionInput {
-    functionName: string;
-    signature: string;
-    args: ethersUtils.Result;
-    // Common parameters for swaps
-    path?: string[]; // Array of token addresses
-    amountOutMin?: ethers.BigNumber; // For swapExactETHForTokens, swapExactTokensForTokens
-    amountIn?: ethers.BigNumber; // For swapExactTokensForETH, swapExactTokensForTokens
-    amountOut?: ethers.BigNumber; // For swapETHForExactTokens, swapTokensForExactTokens
-    amountInMax?: ethers.BigNumber; // For swapETHForExactTokens, swapTokensForExactTokens
-    to?: string; // Recipient address
-    deadline?: ethers.BigNumber;
-    // Common parameters for liquidity
-    tokenA?: string;
-    tokenB?: string;
-    amountADesired?: ethers.BigNumber;
-    amountBDesired?: ethers.BigNumber;
-    amountAMin?: ethers.BigNumber;
-    amountBMin?: ethers.BigNumber;
-    liquidity?: ethers.BigNumber;
 }
 
 export class TransactionDecoder {
@@ -81,7 +63,6 @@ export class TransactionDecoder {
             }
         } catch (error) {
             // Not an error, just means data didn't match any function in this router's ABI
-            // logger.trace({ txHash: tx.hash, router: router.name, data: tx.data }, "Data did not match router ABI");
         }
         return null;
     }
@@ -144,11 +125,9 @@ export class TransactionDecoder {
                 break;
             case 'addLiquidityETH':
                 decodedOutput.tokenA = args.token; // Typically tokenA is the ERC20
-                // tokenB is ETH implicitly
                 decodedOutput.amountADesired = args.amountTokenDesired;
                 decodedOutput.amountAMin = args.amountTokenMin;
-                // amountBMin is amountETHMin
-                decodedOutput.amountBMin = args.amountETHMin;
+                decodedOutput.amountBMin = args.amountETHMin; // amountBMin is amountETHMin
                 decodedOutput.to = args.to;
                 decodedOutput.deadline = args.deadline;
                 break;
@@ -163,7 +142,7 @@ export class TransactionDecoder {
                 break;
             case 'removeLiquidityETH':
             case 'removeLiquidityETHSupportingFeeOnTransferTokens':
-            case 'removeLiquidityETHWithPermit': // Permit params differ slightly but core is similar
+            case 'removeLiquidityETHWithPermit': 
             case 'removeLiquidityETHWithPermitSupportingFeeOnTransferTokens':
                 decodedOutput.tokenA = args.token; // ERC20 token
                 decodedOutput.liquidity = args.liquidity;
@@ -172,7 +151,6 @@ export class TransactionDecoder {
                 decodedOutput.to = args.to;
                 decodedOutput.deadline = args.deadline;
                 break;
-            // Add other functions as needed, e.g., multicall or specific SushiSwap functions
         }
     }
 }
@@ -182,8 +160,6 @@ export function initializeDefaultDecoder(): TransactionDecoder {
     const defaultRouters = [
         { address: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D", name: "UniswapV2Router02", abi: UniswapV2Router02ABI },
         { address: "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F", name: "SushiSwapRouter", abi: SushiSwapRouterABI },
-        // Add other routers from config.knownRouters if they use these standard ABIs
-        // Or allow dynamic addition based on config.
     ];
     return new TransactionDecoder(defaultRouters);
 }
