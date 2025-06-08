@@ -1,0 +1,32 @@
+{
+  "name": "mempool-ingestion-service",
+  "version": "0.1.0",
+  "description": "Service to ingest and process mempool data",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "ts-node src/main.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mempool",
+    "blockchain",
+    "ethereum"
+  ],
+  "author": "MEV Bot V10 Team",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "ethers": "^5.7.2", // Using v5 as it's common, adjust if v6 is intended
+    "dotenv": "^16.3.1",
+    "@google-cloud/firestore": "^7.0.0", // For output stream or logging
+    "@google-cloud/secret-manager": "^5.0.0",
+    "pino": "^8.17.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.5",
+    "ts-node": "^10.9.2",
+    "@types/pino": "^7.0.5"
+  }
+}
