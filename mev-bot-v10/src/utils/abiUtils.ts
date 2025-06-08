@@ -3,9 +3,11 @@ import fs from 'fs/promises';
 import path from 'path';
 import { utils as ethersUtils } from 'ethers';
 
-// Path to the ABIs directory relative to the dist folder after compilation
-// This might need adjustment based on your final build structure or if ABIs are copied to dist
-const ABI_DIR = path.join(__dirname, '../../abis'); // if abis is at project root, and this file is in dist/utils
+// Path to the ABIs directory.
+// Assuming 'src/abis' is copied to 'dist/abis' during build,
+// and this file 'abiUtils.js' will be in 'dist/utils'.
+// So, the path from 'dist/utils' to 'dist/abis' is '../abis'.
+const ABI_DIR = path.join(__dirname, '../abis');
 
 export interface IAbiCache {
     loadAbi(name: string, filePath?: string): Promise<ethersUtils.Fragment[] | null>;
@@ -30,17 +32,18 @@ export class AbiCache implements IAbiCache {
     }
 
     async loadAbi(name: string, filePath?: string): Promise<ethersUtils.Fragment[] | null> {
-        if (this.cache.has(name.toLowerCase())) {
-            return this.cache.get(name.toLowerCase())!;
+        const lowerCaseName = name.toLowerCase();
+        if (this.cache.has(lowerCaseName)) {
+            return this.cache.get(lowerCaseName)!;
         }
-        const fPath = filePath || path.join(ABI_DIR, `${name}.json`);
+        const fPath = filePath || path.join(ABI_DIR, `${name}.json`); // Use name for filename, cache with lowerCaseName
         try {
             const abiString = await fs.readFile(fPath, 'utf-8');
             // JSON.parse will produce an array of objects/strings, which Interface constructor can handle
             const abiInput = JSON.parse(abiString) as (string | ethersUtils.JsonFragment)[];
             const iface = new ethersUtils.Interface(abiInput);
             const fragments = iface.fragments;
-            this.cache.set(name.toLowerCase(), fragments);
+            this.cache.set(lowerCaseName, fragments);
             console.log(`ABI Cache: Loaded ABI for ${name} from ${fPath}`);
             return fragments;
         } catch (error) {
@@ -50,16 +53,18 @@ export class AbiCache implements IAbiCache {
     }
 
     async getAbi(name: string): Promise<ethersUtils.Fragment[] | null> {
-        if (!this.cache.has(name.toLowerCase())) {
-            return this.loadAbi(name); // loadAbi handles caching
+        const lowerCaseName = name.toLowerCase();
+        if (!this.cache.has(lowerCaseName)) {
+            return this.loadAbi(name); // loadAbi handles caching with lowerCaseName key from original name
         }
-        return this.cache.get(name.toLowerCase()) || null;
+        return this.cache.get(lowerCaseName) || null;
     }
 
     addAbi(name: string, abi: ethersUtils.Fragment[] | ReadonlyArray<string>): void {
+        const lowerCaseName = name.toLowerCase();
         try {
             const iface = new ethersUtils.Interface(abi);
-            this.cache.set(name.toLowerCase(), iface.fragments);
+            this.cache.set(lowerCaseName, iface.fragments);
             console.log(`ABI Cache: Manually added/processed ABI for ${name}`);
         } catch (error) {
             console.error(`ABI Cache: Error processing ABI for ${name}:`, error);
@@ -149,6 +154,7 @@ export const globalAbiCache = new AbiCache([
     { name: 'UniswapV2Router02', abi: UniswapV2RouterABI },
 ]);
 
-// Example: To load SushiSwapRouter dynamically if not preloaded:
-// globalAbiCache.loadAbi('SushiSwapRouter', path.join(ABI_DIR, 'SushiSwapRouter.json'));
-// Or ensure SushiSwapRouter.json is present in abis folder and use globalAbiCache.getAbi('SushiSwapRouter')
+// Example: To load MEVBotV8Executor.json or SushiSwapRouter dynamically if not preloaded:
+// globalAbiCache.loadAbi('MEVBotV8Executor');
+// globalAbiCache.loadAbi('SushiSwapRouter'); // Assuming SushiSwapRouter.json is in ABI_DIR
+// These will be loaded on first call to getAbi('MEVBotV8Executor') or getAbi('SushiSwapRouter') if not preloaded.

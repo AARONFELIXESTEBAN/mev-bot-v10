@@ -1,8 +1,9 @@
 import WebSocket from 'ws';
 import { ethers } from 'ethers';
+import pino from 'pino'; // Added direct import for pino.Logger type
 
-import { ConfigService, AppConfig } from './config/configService'; // AppConfig might not be directly used here after ConfigService is instantiated
-import { initializeLogger, getLogger, pino } from './logger/loggerService';
+import { ConfigService } from './config/configService'; // Removed AppConfig import as it's not directly used here
+import { initializeLogger, getLogger } from './logger/loggerService'; // Removed pino from this import
 import { RpcService } from './rpc/rpcService';
 import { KmsService } from './kms/kmsService';
 import { DataCollectionService } from './dataCollection/firestoreService';
@@ -12,7 +13,8 @@ import { PriceService } from '../services/price/priceService';
 import { OpportunityIdentificationService, ProcessedMempoolTransaction, PotentialOpportunity } from '../services/opportunity/opportunityService';
 import { SimulationService, SimulationResult } from '../services/simulation/simulationService';
 import { DexArbitrageStrategy } from '../strategies/dexArbitrageStrategy';
-import { TokenInfo } from '../utils/typeUtils'; // Corrected import path for TokenInfo
+import { TokenInfo } from '../utils/typeUtils';
+import { MempoolEventBroadcast, isDecodedMempoolSwap } from '../interfaces/mempoolEvents.interface';
 
 let logger: pino.Logger;
 
@@ -174,33 +176,36 @@ export class MevBotV10Orchestrator {
 
     private async onMempoolMessage(messageData: string): Promise<void> {
         try {
-            const message = JSON.parse(messageData) as any;
+            const message = JSON.parse(messageData) as MempoolEventBroadcast;
             logger.trace({ type: message.type }, "MevBotV10Orchestrator: Received message from mempool service.");
 
-            if (message.type === 'decoded_transaction' || message.type === 'transaction') {
-                const mempoolTxPayload = message.payload as any;
+            if (message.type === 'decoded_transaction' && isDecodedMempoolSwap(message.payload)) {
+                const mempoolSwapPayload = message.payload;
 
                 const processedTx: ProcessedMempoolTransaction = {
-                    hash: mempoolTxPayload.hash,
-                    to: mempoolTxPayload.to,
-                    from: mempoolTxPayload.from,
-                    txHash: mempoolTxPayload.hash,
-                    routerName: mempoolTxPayload.decodedInput?.routerName || "UnknownRouter",
-                    routerAddress: mempoolTxPayload.to || "0x",
-                    functionName: mempoolTxPayload.decodedInput?.functionName || "UnknownFunction",
-                    path: mempoolTxPayload.decodedInput?.path || [],
-                    amountIn: mempoolTxPayload.decodedInput?.amountIn ? ethers.BigNumber.from(mempoolTxPayload.decodedInput.amountIn) : undefined,
-                    amountOutMin: mempoolTxPayload.decodedInput?.amountOutMin ? ethers.BigNumber.from(mempoolTxPayload.decodedInput.amountOutMin) : undefined,
-                    amountOut: mempoolTxPayload.decodedInput?.amountOut ? ethers.BigNumber.from(mempoolTxPayload.decodedInput.amountOut) : undefined,
-                    amountInMax: mempoolTxPayload.decodedInput?.amountInMax ? ethers.BigNumber.from(mempoolTxPayload.decodedInput.amountInMax) : undefined,
-                    recipient: mempoolTxPayload.decodedInput?.to || mempoolTxPayload.from,
-                    txTimestamp: message.timestamp || Date.now(),
-                    gasPrice: mempoolTxPayload.gasPrice?.toString(),
-                    blockNumber: mempoolTxPayload.blockNumber,
-                    decodedInput: mempoolTxPayload.decodedInput
+                    hash: mempoolSwapPayload.hash,
+                    to: mempoolSwapPayload.to,
+                    from: mempoolSwapPayload.from,
+                    txHash: mempoolSwapPayload.hash,
+                    routerName: mempoolSwapPayload.decodedInput.routerName,
+                    routerAddress: mempoolSwapPayload.to,
+                    functionName: mempoolSwapPayload.decodedInput.functionName,
+                    path: mempoolSwapPayload.decodedInput.path || [],
+                    amountIn: mempoolSwapPayload.decodedInput.amountIn ? ethers.BigNumber.from(mempoolSwapPayload.decodedInput.amountIn) : undefined,
+                    amountOutMin: mempoolSwapPayload.decodedInput.amountOutMin ? ethers.BigNumber.from(mempoolSwapPayload.decodedInput.amountOutMin) : undefined,
+                    amountOut: mempoolSwapPayload.decodedInput.amountOut ? ethers.BigNumber.from(mempoolSwapPayload.decodedInput.amountOut) : undefined,
+                    amountInMax: mempoolSwapPayload.decodedInput.amountInMax ? ethers.BigNumber.from(mempoolSwapPayload.decodedInput.amountInMax) : undefined,
+                    recipient: mempoolSwapPayload.decodedInput.to || mempoolSwapPayload.from,
+                    txTimestamp: message.timestamp,
+                    gasPrice: mempoolSwapPayload.gasPrice?.toString(),
+                    maxFeePerGas: mempoolSwapPayload.maxFeePerGas?.toString(),
+                    maxPriorityFeePerGas: mempoolSwapPayload.maxPriorityFeePerGas?.toString(),
+                    gasLimit: mempoolSwapPayload.gasLimit.toString(),
+                    blockNumber: mempoolSwapPayload.blockNumber,
+                    decodedInput: mempoolSwapPayload.decodedInput
                 };
 
-                if (!ethers.utils.isAddress(processedTx.routerAddress) || !processedTx.decodedInput || processedTx.decodedInput.path.length < 2) {
+                if (!ethers.utils.isAddress(processedTx.routerAddress) || processedTx.decodedInput.path.length < 2) {
                     logger.trace({txHash: processedTx.txHash}, "Skipping mempool message due to invalid router address or path in decodedInput.");
                     return;
                 }
@@ -214,6 +219,10 @@ export class MevBotV10Orchestrator {
                     const simulationResult = await this.simulationService.simulateArbitragePath(opp, this.currentBlockNumber);
                     await this.processSimulationResult(simulationResult);
                 }
+            } else if (message.type === 'transaction' && message.payload && (message.payload as any).hash) {
+                logger.debug({txHash: (message.payload as any).hash}, "Received raw transaction, skipping detailed processing in this handler for now.");
+            } else if (message.type === 'status') {
+                 logger.info({status: message.payload}, "Received status message from mempool service.");
             }
         } catch (error) {
             logger.error({ err: error, rawMessage: messageData }, "MevBotV10Orchestrator: Error processing message from mempool service.");
