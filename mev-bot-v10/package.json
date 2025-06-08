@@ -22,13 +22,16 @@
     "@google-cloud/firestore": "^7.0.0",
     "@google-cloud/kms": "^4.0.0",
     "@google-cloud/secret-manager": "^5.0.0",
+    "@types/js-yaml": "^4.0.9",
     "dotenv": "^16.3.1",
-    "ethers": "^5.7.2",
-    "pino": "^8.17.2"
+    "ethers": "^5.8.0",
+    "js-yaml": "^4.1.0",
+    "pino": "^8.17.2",
+    "ws": "^8.18.2"
   },
   "devDependencies": {
     "@types/elliptic": "^6.4.18",
-    "@types/node": "^20.11.5",
+    "@types/node": "^20.19.0",
     "@types/pino": "^7.0.5",
     "@types/ws": "^8.18.1",
     "ts-node": "^10.9.2",

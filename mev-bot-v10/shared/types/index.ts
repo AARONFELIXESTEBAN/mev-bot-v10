@@ -1,7 +1,7 @@
 // In shared/types/index.ts
 
 // +++ FIX: Added this import statement for ethers types.
-import { ethers, utils as ethersUtils } from 'ethers';
+import { ethers, utils as ethersUtils, providers } from 'ethers';
 
 export interface DecodedTransactionInput {
     functionName: string;
@@ -25,6 +25,6 @@ export interface DecodedTransactionInput {
     liquidity?: ethers.BigNumber;
 }
 
-export interface FilterableTransaction extends ethers.providers.TransactionResponse {
+export interface FilterableTransaction extends providers.TransactionResponse {
     decodedInput?: DecodedTransactionInput & { routerName: string };
 }

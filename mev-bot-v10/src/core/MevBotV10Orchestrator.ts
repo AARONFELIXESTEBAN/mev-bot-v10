@@ -1,8 +1,9 @@
 import WebSocket from 'ws';
 import { ethers } from 'ethers';
+import { type Logger as PinoLogger } from 'pino';
 
 import { ConfigService, AppConfig } from './config/configService';
-import { initializeLogger, getLogger, pino } from './logger/loggerService';
+import { initializeLogger, getLogger } from './logger/loggerService';
 import { RpcService } from './rpc/rpcService';
 import { KmsService } from './kms/kmsService';
 import { DataCollectionService } from './dataCollection/firestoreService'; // Assuming this is the correct name
@@ -15,7 +16,7 @@ import { FilterableTransaction } from '../../shared/types';
 import { DexArbitrageStrategy } from '../strategies/dexArbitrageStrategy'; // Paper Trading Logic
 import { TokenInfo } from '../utils/typeUtils';
 
-let logger: pino.Logger; // Will be initialized after config
+let logger: PinoLogger; // Will be initialized after config
 
 const DEFAULT_RECONNECT_INTERVAL_MS = 5000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -42,9 +43,9 @@ export class MevBotV10Orchestrator {
         // Logger needs to be initialized after config is loaded, especially for log level
         // For now, getLogger() might return a default logger if not initialized.
         // A proper init sequence in main.ts would handle this.
-        logger = initializeLogger(this.configService.get('nodeEnv') === 'development' ?
-            { logLevel: this.configService.get('logLevel') || 'info', nodeEnv: 'development'} :
-            { logLevel: this.configService.get('logLevel') || 'info', nodeEnv: 'production'}
+        logger = initializeLogger(this.configService.get('node_env') === 'development' ?
+            { logLevel: this.configService.get('log_level') || 'info', nodeEnv: 'development'} :
+            { logLevel: this.configService.get('log_level') || 'info', nodeEnv: 'production'}
         );
 
         logger.info("MevBotV10Orchestrator: Initializing services...");
@@ -60,11 +61,11 @@ export class MevBotV10Orchestrator {
 
         this.simulationService = new SimulationService(this.configService, this.rpcService, this.scService, this.priceService);
         this.paperTradingStrategy = new DexArbitrageStrategy(this.dataCollectionService,
-            this.configService.get('FIRESTORE_PAPER_TRADE_COLLECTION') || 'paper_trades_v10_dex_arb',
-            this.configService.get('INITIAL_PORTFOLIO') as any || undefined // Type cast or provide default structure
+            (this.configService.get('paper_trading_config.firestore_collection_paper_trades') as string | undefined) || 'paper_trades_v10_dex_arb',
+            (this.configService.get('paper_trading_config.initial_portfolio') as { [tokenAddress: string]: string } | undefined) || undefined
         );
 
-        this.mempoolWsUrl = this.configService.getOrThrow('MEV_BOT_MEMPOOL_WS_URL');
+        this.mempoolWsUrl = this.configService.getOrThrow('mempool_ingestion.publisher_url') as string;
         logger.info("MevBotV10Orchestrator: All services initialized.");
     }
 
@@ -89,7 +90,7 @@ export class MevBotV10Orchestrator {
         this.updateCurrentBlockNumber(); // Initial fetch
         setInterval(async () => {
             await this.updateCurrentBlockNumber();
-        }, parseInt(this.configService.get('BLOCK_UPDATE_INTERVAL_MS') || '12000')); // e.g., every 12 seconds
+        }, parseInt((this.configService.get('orchestrator.block_update_interval_ms') as string | undefined) || '12000')); // e.g., every 12 seconds
     }
 
     private async updateCurrentBlockNumber(): Promise<void> {
@@ -152,9 +153,9 @@ export class MevBotV10Orchestrator {
         this.mempoolWsClient = null;
         if (this.explicitlyStopped) return;
 
-        if (this.reconnectAttempts < (parseInt(this.configService.get('MEMPOOL_MAX_RECONNECT_ATTEMPTS') || `${MAX_RECONNECT_ATTEMPTS}`))) {
+        if (this.reconnectAttempts < (parseInt((this.configService.get('mempool_ingestion.max_reconnect_attempts') as string | undefined) || `${MAX_RECONNECT_ATTEMPTS}`))) {
             this.reconnectAttempts++;
-            const delay = parseInt(this.configService.get('MEMPOOL_RECONNECT_INTERVAL_MS') || `${DEFAULT_RECONNECT_INTERVAL_MS}`);
+            const delay = parseInt((this.configService.get('mempool_ingestion.reconnect_interval_ms') as string | undefined) || `${DEFAULT_RECONNECT_INTERVAL_MS}`);
             logger.info(`MevBotV10Orchestrator: Attempting to reconnect to mempool service in ${delay / 1000}s...`);
             setTimeout(() => this.connectToMempoolService(), delay);
         } else {
@@ -218,9 +219,9 @@ export class MevBotV10Orchestrator {
     }
 
     private async processSimulationResult(simResult: SimulationResult): Promise<void> {
-        const minProfitUsd = parseFloat(this.configService.get('MIN_PROFIT_USD_V10') || '1.0'); // Default $1
-        const paperTradingMode = this.configService.get('PAPER_TRADING_MODE') === 'true';
-        const executionEnabled = this.configService.get('EXECUTION_ENABLED') === 'true';
+        const minProfitUsd = parseFloat((this.configService.get('simulation_service.min_profit_threshold_usd') as string | undefined) || '1.0'); // Default $1
+        const paperTradingMode = this.configService.get('paper_trading_config.enabled') === true;
+        const executionEnabled = this.configService.get('execution_config.enabled') === true;
 
         let discardReason = "";
 
@@ -235,7 +236,7 @@ export class MevBotV10Orchestrator {
         if (discardReason) {
             logger.info({ pathId: simResult.pathId, reason: discardReason, netProfitUSD: simResult.netProfitUsd?.toFixed(2) }, "Opportunity discarded.");
             // Optionally log discarded opportunities to Firestore for analysis
-            if (this.configService.get('LOG_DISCARDED_OPPORTUNITIES') === 'true') {
+            if (this.configService.get('data_collection.log_discarded_opportunities') === true) {
                 await this.dataCollectionService.logData({
                     type: "discarded_opportunity",
                     pathId: simResult.pathId,
@@ -267,10 +268,10 @@ export class MevBotV10Orchestrator {
 
     private get baseToken(): TokenInfo { // Ensure TokenInfo here is the imported type
         return {
-            address: this.configService.getOrThrow('BASE_TOKEN_ADDRESS'),
-            symbol: this.configService.get('BASE_TOKEN_SYMBOL') || 'WETH',
-            decimals: parseInt(this.configService.get('BASE_TOKEN_DECIMALS') || '18'),
-            name: this.configService.get('BASE_TOKEN_SYMBOL') || 'Wrapped Ether'
+            address: this.configService.getOrThrow('opportunity_service.base_token_address') as string,
+            symbol: (this.configService.get('opportunity_service.base_token_symbol') as string | undefined) || 'WETH',
+            decimals: parseInt((this.configService.get('opportunity_service.base_token_decimals') as string | undefined) || '18'),
+            name: (this.configService.get('opportunity_service.base_token_symbol') as string | undefined) || 'Wrapped Ether'
         };
     }
 

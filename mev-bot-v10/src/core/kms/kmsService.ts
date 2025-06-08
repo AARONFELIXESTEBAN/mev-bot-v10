@@ -69,7 +69,7 @@ export class KmsService {
     private ethereumAddressCache: string | null = null;
 
     constructor(private configService: ConfigService) {
-        const kmsKeyPath = this.configService.getOrThrow('kmsKeyPath');
+        const kmsKeyPath = this.configService.getOrThrow('kms_config.operational_wallet_key_path');
         this.keyPath = kmsKeyPath;
         this.kmsClient = new KeyManagementServiceClient();
         logger.info(`KmsService: Initialized with key path ${this.keyPath}`);

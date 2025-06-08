@@ -14,8 +14,8 @@ export class DataCollectionService {
     private schemaVersion: string = "10.1"; // As per requirement
 
     constructor(private configService: ConfigService) {
-        const firestoreProjectId = this.configService.get('firestoreProjectId') || this.configService.get('gcpProjectId');
-        this.mainCollection = this.configService.getOrThrow('firestoreCollectionV10');
+        const firestoreProjectId = this.configService.get('firestore_config.project_id') || this.configService.get('gcp_project_id');
+        this.mainCollection = this.configService.getOrThrow('firestore_config.main_collection_v10');
 
         if (!firestoreProjectId) {
             logger.warn("DataCollectionService: Firestore Project ID not explicitly set, relying on ADC default or GCE instance project.");

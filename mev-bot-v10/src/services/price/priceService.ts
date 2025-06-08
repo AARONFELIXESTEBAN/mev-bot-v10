@@ -118,7 +118,7 @@ export class PriceService {
         // For now, let's assume WETH is the base and use a placeholder value.
         if (tokenSymbol.toUpperCase() === 'WETH' || tokenSymbol.toUpperCase() === 'ETH') {
             // This should come from config or a dynamic feed for real use.
-            const wethUsdPrice = parseFloat(this.configService.get('WETH_USD_PRICE_ESTIMATE') || '2000.0');
+            const wethUsdPrice = parseFloat(this.configService.get('price_service.weth_usd_price_estimate') || '2000.0');
             logger.debug(`PriceService: Returning USD price for ${tokenSymbol}: ${wethUsdPrice} (MVP placeholder/config)`);
             return wethUsdPrice;
         }
