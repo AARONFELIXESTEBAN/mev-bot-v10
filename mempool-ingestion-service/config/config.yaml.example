@@ -1,0 +1,25 @@
+# Example configuration for Mempool Ingestion Service
+# Values here can be overridden by environment variables
+
+log_level: "info"
+
+# Mempool WebSocket endpoint (e.g., Alchemy, Infura, direct node)
+# Ensure this is for the correct network (e.g., Ethereum mainnet)
+mempool_ws_url: "wss://eth-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY"
+
+# Firestore configuration (if FirestoreOutputStream is used)
+# The service account used by the application needs appropriate Firestore permissions.
+firestore_collection: "mempool_transactions_stream_v1"
+
+# Output stream configuration (alternative to direct Firestore, if using a forwarder)
+# output_stream:
+#   type: "http_post" # or "redis_pubsub", "kafka"
+#   target_url: "http://localhost:3001/api/v1/mempool-data" # Example if posting to another service
+
+# Processing parameters
+# (Add any specific parameters needed for transaction transformation)
+# example_processing_param: "value"
+
+# Connection retry policy for WebSocket
+connection_retry_attempts: 5
+connection_retry_delay_seconds: 10
