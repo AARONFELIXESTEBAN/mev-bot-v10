@@ -39,6 +39,7 @@ export class AbiCache implements IAbiCache {
         const fPath = filePath || path.join(ABI_DIR, `${name}.json`); // Use name for filename, cache with lowerCaseName
         try {
             const abiString = await fs.readFile(fPath, 'utf-8');
+<<<<<<< HEAD
             // JSON.parse will produce an array of objects/strings, which Interface constructor can handle
             const abiInput = JSON.parse(abiString) as (string | ethersUtils.JsonFragment)[];
             const iface = new ethersUtils.Interface(abiInput);
@@ -46,6 +47,15 @@ export class AbiCache implements IAbiCache {
             this.cache.set(lowerCaseName, fragments);
             console.log(`ABI Cache: Loaded ABI for ${name} from ${fPath}`);
             return fragments;
+=======
+            // Changed type assertion to any[] as ethers.utils.Interface constructor is flexible.
+            const abiInput = JSON.parse(abiString) as any[];
+            const iface = new ethersUtils.Interface(abiInput);
+            const fragments = iface.fragments;
+            this.cache.set(lowerCaseName, [...fragments]); // Changed to store a copy
+            console.log(`ABI Cache: Loaded ABI for ${name} from ${fPath}`);
+            return [...fragments]; // Return a copy
+>>>>>>> a04b82e230e63a054bb5cc276284da190be74d7c
         } catch (error) {
             console.error(`ABI Cache: Error loading ABI for ${name} from ${fPath}:`, error);
             return null;
@@ -57,14 +67,23 @@ export class AbiCache implements IAbiCache {
         if (!this.cache.has(lowerCaseName)) {
             return this.loadAbi(name); // loadAbi handles caching with lowerCaseName key from original name
         }
+<<<<<<< HEAD
         return this.cache.get(lowerCaseName) || null;
+=======
+        const fragments = this.cache.get(lowerCaseName);
+        return fragments ? [...fragments] : null; // Return a copy
+>>>>>>> a04b82e230e63a054bb5cc276284da190be74d7c
     }
 
     addAbi(name: string, abi: ethersUtils.Fragment[] | ReadonlyArray<string>): void {
         const lowerCaseName = name.toLowerCase();
         try {
             const iface = new ethersUtils.Interface(abi);
+<<<<<<< HEAD
             this.cache.set(lowerCaseName, iface.fragments);
+=======
+            this.cache.set(lowerCaseName, [...iface.fragments]); // Changed to store a copy
+>>>>>>> a04b82e230e63a054bb5cc276284da190be74d7c
             console.log(`ABI Cache: Manually added/processed ABI for ${name}`);
         } catch (error) {
             console.error(`ABI Cache: Error processing ABI for ${name}:`, error);
