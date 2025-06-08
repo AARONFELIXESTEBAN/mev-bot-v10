@@ -1,31 +1,29 @@
-// Placeholder for DEX Arbitrage Strategy Logic (including Paper Trading Module)
-import { SimulationResult } from '@services/simulation/simulationService'; // Updated path
-import { DataCollectionService as FirestoreService } from '@core/dataCollection/firestoreService'; // Updated import and aliased
-import { getLogger, pino } from '@core/logger/loggerService'; // Added logger import
+import { SimulationResult } from '@services/simulation/simulationService';
+import { DataCollectionService as FirestoreService } from '@core/dataCollection/firestoreService';
+import { getLogger } from '@core/logger/loggerService'; // Removed pino import
 import { ethers } from 'ethers';
 
 export interface PaperTrade {
     id: string;
-    opportunityPathName: string; // from simulation.opportunity.pathName
-    simulatedNetProfitBaseToken: string; // Store formatted string from simulation.netProfitBaseToken
-    netProfitUsd: number; // from simulation.netProfitUsd
-    amountInStartToken: string; // Store formatted string from simulation.opportunity.estimatedAmountInStartToken or simulation.amountInLeg1
-    simulatedAmountOutEndToken: string; // Store formatted string from simulation.amountOutLeg2
-    totalGasCostEstimateBaseToken: string; // Store formatted string from simulation.estimatedGasCostBaseToken
-    simulationTimestamp: number; // from simulation.simulationTimestamp
-    pathId: string; // from simulation.pathId
+    opportunityPathId: string; // Changed from opportunityPathName to opportunityPathId
+    simulatedNetProfitBaseToken: string;
+    netProfitUsd: number;
+    amountInStartToken: string;
+    simulatedAmountOutEndToken: string;
+    totalGasCostEstimateBaseToken: string;
+    simulationTimestamp: number;
+    pathId: string;
 }
 
 export class DexArbitrageStrategy {
-    private logger: pino.Logger; // Added logger property
-    private firestoreService: FirestoreService; // Type remains FirestoreService due to alias
+    private logger: ReturnType<typeof getLogger>; // Use ReturnType to infer logger type
+    private firestoreService: FirestoreService;
     private paperTradeCollection: string;
-    // Virtual portfolio - simple version for MVP
     private virtualPortfolio: { [tokenAddress: string]: ethers.BigNumber };
-    private initialPortfolio: { [tokenAddress: string]: string }; // Initial amounts as strings
+    private initialPortfolio: { [tokenAddress: string]: string };
 
     constructor(
-        firestoreService: FirestoreService, // Parameter type remains FirestoreService due to alias
+        firestoreService: FirestoreService,
         paperTradeCollection: string = 'paper_trades_dex_arb',
         initialPortfolio: { [tokenAddress: string]: string } = { "WETH_ADDRESS_PLACEHOLDER": "10000000000000000000" } // Default 10 WETH
     ) {
@@ -56,12 +54,12 @@ export class DexArbitrageStrategy {
 
     async executePaperTrade(simulation: SimulationResult): Promise<void> {
         if (!simulation.isProfitable) {
-            this.logger.info({ pathName: simulation.opportunity.pathName, pathId: simulation.pathId }, "Strategy: Skipping non-profitable simulation.");
+            this.logger.info({ pathId: simulation.pathId }, "Strategy: Skipping non-profitable simulation.");
             return;
         }
 
-        const profitAmount = simulation.netProfitBaseToken; // Already a BigNumber
-        const startTokenAddress = simulation.opportunity.tokenPath[0].address; // Address of WETH or other base asset
+        const profitAmount = simulation.netProfitBaseToken;
+        const startTokenAddress = simulation.opportunity.tokenPath[0].address;
 
         if (!this.virtualPortfolio[startTokenAddress]) {
             this.virtualPortfolio[startTokenAddress] = ethers.BigNumber.from(0);
@@ -69,12 +67,12 @@ export class DexArbitrageStrategy {
         this.virtualPortfolio[startTokenAddress] = this.virtualPortfolio[startTokenAddress].add(profitAmount);
 
         const baseTokenDecimals = simulation.opportunity.tokenPath[0].decimals;
-        const endTokenDecimals = simulation.opportunity.tokenPath[2].decimals; // Assuming tokenPath[2] is the end token of the hop
+        const endTokenDecimals = simulation.opportunity.tokenPath[2].decimals;
 
-        const tradeId = `${simulation.opportunity.pathName}-${simulation.simulationTimestamp}-${ethers.utils.formatUnits(simulation.amountInLeg1, baseTokenDecimals).slice(-6)}`;
+        const tradeId = `${simulation.pathId}-${simulation.simulationTimestamp}-${ethers.utils.formatUnits(simulation.amountInLeg1, baseTokenDecimals).slice(-6)}`;
         const paperTrade: PaperTrade = {
             id: tradeId,
-            opportunityPathName: simulation.opportunity.pathName,
+            opportunityPathId: simulation.pathId, // Changed from opportunityPathName to opportunityPathId
             simulatedNetProfitBaseToken: ethers.utils.formatUnits(simulation.netProfitBaseToken, baseTokenDecimals),
             netProfitUsd: simulation.netProfitUsd,
             amountInStartToken: ethers.utils.formatUnits(simulation.amountInLeg1, baseTokenDecimals),
@@ -88,10 +86,10 @@ export class DexArbitrageStrategy {
         this.logger.info({
             tradeId: paperTrade.id,
             pathId: paperTrade.pathId,
-            pathName: paperTrade.opportunityPathName,
+            pathIdLogged: paperTrade.opportunityPathId, // Changed from pathName to pathIdLogged for clarity
             profitBaseToken: paperTrade.simulatedNetProfitBaseToken,
             netProfitUsd: paperTrade.netProfitUsd,
-            startToken: startTokenAddress, // Log address for clarity
+            startToken: startTokenAddress,
             newBalance: ethers.utils.formatUnits(this.virtualPortfolio[startTokenAddress], baseTokenDecimals)
         }, "Strategy: Paper trade executed.");
     }
