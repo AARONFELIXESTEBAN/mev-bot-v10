@@ -19,7 +19,7 @@ export class RpcService {
     private providerStats: Map<string, ProviderStats> = new Map(); // Key: networkName/url
 
     constructor(private configService: ConfigService) {
-        const rpcUrlsConfig = this.configService.get('rpcUrls');
+        const rpcUrlsConfig = this.configService.get('rpc_urls'); // Changed 'rpcUrls' to 'rpc_urls'
         if (rpcUrlsConfig) {
             for (const network in rpcUrlsConfig) {
                 const networkConfig = rpcUrlsConfig[network];

@@ -35,9 +35,9 @@ export class OpportunityIdentificationService {
         private priceService: PriceService,
         private scService: SmartContractInteractionService
     ) {
-        const baseTokenAddress = this.configService.getOrThrow('BASE_TOKEN_ADDRESS');
-        const baseTokenSymbol = this.configService.get('BASE_TOKEN_SYMBOL') || "WETH"; // Default to WETH if not set
-        const baseTokenDecimals = parseInt(this.configService.get('BASE_TOKEN_DECIMALS') || "18");
+        const baseTokenAddress = this.configService.getOrThrow('opportunity_service.base_token_address');
+        const baseTokenSymbol = this.configService.get('opportunity_service.base_token_symbol') || "WETH"; // Default to WETH if not set
+        const baseTokenDecimals = parseInt(this.configService.get('opportunity_service.base_token_decimals') || "18");
         this.baseToken = {
             address: baseTokenAddress,
             symbol: baseTokenSymbol,
@@ -45,9 +45,9 @@ export class OpportunityIdentificationService {
             name: baseTokenSymbol
         };
 
-        this.dexFactories = this.configService.get('DEX_FACTORIES') || {};
+        this.dexFactories = this.configService.get('opportunity_service.dex_factories') || {};
         if (Object.keys(this.dexFactories).length === 0) {
-            logger.warn("OpportunityIdentificationService: DEX_FACTORIES not configured. Cannot determine leg1PairAddress.");
+            logger.warn("OpportunityIdentificationService: opportunity_service.dex_factories not configured. Cannot determine leg1PairAddress.");
         }
 
 
@@ -57,7 +57,7 @@ export class OpportunityIdentificationService {
 
     private async initializeWhitelistedTokensAndPools(): Promise<void> {
         // Load whitelisted token addresses (CSV)
-        const whitelistedAddressesCsv = this.configService.get('CORE_WHITELISTED_TOKENS_CSV') || "";
+        const whitelistedAddressesCsv = this.configService.get('opportunity_service.core_whitelisted_tokens_csv') || "";
         const addresses = whitelistedAddressesCsv.split(',').map(a => a.trim()).filter(a => ethers.utils.isAddress(a));
 
         logger.info(`Attempting to load info for whitelisted token addresses: ${addresses.join(', ')}`);
@@ -87,7 +87,7 @@ export class OpportunityIdentificationService {
 
         // Load known DEX pools from config (example structure)
         // Config should provide: pairAddress, dexName, token0Symbol, token1Symbol
-        const configuredPools = this.configService.get('KNOWN_DEX_POOLS_CONFIG') as Array<{
+        const configuredPools = this.configService.get('opportunity_service.known_dex_pools_config') as Array<{
             pairAddress: string, dexName: string, token0Symbol: string, token1Symbol: string
         }> || [];
 

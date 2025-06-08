@@ -43,17 +43,17 @@ export class SimulationService {
         private priceService: PriceService // For USD conversion of profit
     ) {
         this.defaultSwapAmountBaseToken = ethers.utils.parseUnits(
-            this.configService.get('DEFAULT_SWAP_AMOUNT_BASE_TOKEN') || '0.1', // e.g., 0.1 WETH
-            this.configService.get('BASE_TOKEN_DECIMALS') || 18
+            this.configService.get('simulation_service.default_swap_amount_base_token') || '0.1', // e.g., 0.1 WETH
+            this.configService.get('opportunity_service.base_token_decimals') || 18
         );
-        this.profitRealismMaxPercentage = parseFloat(this.configService.get('PROFIT_REALISM_MAX_PERCENTAGE') || '50.0'); // 50%
-        this.maxProfitUsd = parseFloat(this.configService.get('MAX_PROFIT_USD_V10') || '5000.0'); // $5000
-        this.opportunityFreshnessLimitMs = parseInt(this.configService.get('OPPORTUNITY_FRESHNESS_LIMIT_MS') || '15000', 10); // 15 seconds
-        this.maxBlockAgeForOpportunity = parseInt(this.configService.get('MAX_BLOCK_AGE_FOR_OPPORTUNITY') || '3', 10); // 3 blocks
-        this.defaultSwapGasUnits = parseInt(this.configService.get('DEFAULT_SWAP_GAS_UNITS') || '200000', 10);
+        this.profitRealismMaxPercentage = parseFloat(this.configService.get('simulation_service.profit_realism_max_percentage') || '50.0'); // 50%
+        this.maxProfitUsd = parseFloat(this.configService.get('simulation_service.max_profit_usd_v10') || '5000.0'); // $5000
+        this.opportunityFreshnessLimitMs = parseInt(this.configService.get('simulation_service.opportunity_freshness_limit_ms') || '15000', 10); // 15 seconds
+        this.maxBlockAgeForOpportunity = parseInt(this.configService.get('simulation_service.max_block_age_for_opportunity') || '3', 10); // 3 blocks
+        this.defaultSwapGasUnits = parseInt(this.configService.get('simulation_service.default_swap_gas_units') || '200000', 10);
 
         logger.info('SimulationService: Initialized with parameters:');
-        logger.info(`  Default Swap Amount (Base Token): ${ethers.utils.formatUnits(this.defaultSwapAmountBaseToken, this.configService.get('BASE_TOKEN_DECIMALS') || 18)}`);
+        logger.info(`  Default Swap Amount (Base Token): ${ethers.utils.formatUnits(this.defaultSwapAmountBaseToken, this.configService.get('opportunity_service.base_token_decimals') || 18)}`);
         logger.info(`  Profit Realism Max Percentage: ${this.profitRealismMaxPercentage}%`);
         logger.info(`  Max Profit USD V10: $${this.maxProfitUsd}`);
         logger.info(`  Opportunity Freshness Limit MS: ${this.opportunityFreshnessLimitMs}ms`);
@@ -63,11 +63,11 @@ export class SimulationService {
 
     private async getRouterContract(dexName: string, network: string = 'mainnet'): Promise<ethers.Contract | null> {
         // This should come from a more robust DEX registry in ConfigService or a dedicated DexRegistryService
-        const dexConfigs = this.configService.get('KNOWN_DEX_POOLS_CONFIG') as any[] || []; // This is not router config, but might contain it or imply it
-        const routers = this.configService.get('DEX_ROUTERS') as {[name: string]: string} || {}; // e.g. { "UniswapV2": "0x...", "SushiSwap": "0x..." }
+        // Using a new config path for router addresses: 'opportunity_service.dex_routers'
+        const routers = this.configService.get('opportunity_service.dex_routers') as {[name: string]: string} || {};
 
         let routerAddress = routers[dexName];
-        if (!routerAddress) { // Fallback to check some common ones if not explicitly mapped
+        if (!routerAddress) { // Fallback to check some common ones if not explicitly mapped by name
             if (dexName.toLowerCase().includes("uniswapv2")) routerAddress = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
             else if (dexName.toLowerCase().includes("sushiswap")) routerAddress = "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F";
         }
@@ -165,7 +165,7 @@ export class SimulationService {
             maxProfitUsdCheckFailed = true;
         }
 
-        const isProfitable = netProfitBaseToken.gt(this.configService.get('MIN_NET_PROFIT_BASE_TOKEN_WEI') || "0"); // Compare with min profit threshold from config
+        const isProfitable = netProfitBaseToken.gt(this.configService.get('simulation_service.min_net_profit_base_token_wei') || "0"); // Compare with min profit threshold from config
 
         const finalResult: SimulationResult = {
             ...resultTemplate,
