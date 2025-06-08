@@ -1,5 +1,5 @@
 import { KeyManagementServiceClient, protos } from '@google-cloud/kms';
-import { ethers, utils as ethersUtils, TransactionRequest, BigNumber } from 'ethers';
+import { ethers, utils as ethersUtils, providers, BigNumber, Signature } from 'ethers';
 import { ConfigService } from '../config/configService'; // Adjust path
 import { getLogger } from '../logger/loggerService'; // Adjust path
 // elliptic is a good library for EC operations, including signature parsing and public key recovery
@@ -100,7 +100,7 @@ export class KmsService {
         }
     }
 
-    public async signTransactionDigest(digestHex: string): Promise<ethersUtils.Signature | null> {
+    public async signTransactionDigest(digestHex: string): Promise<Signature | null> {
         const digestBuffer = Buffer.from(digestHex.slice(2), 'hex');
         logger.debug(`KmsService: Signing digest ${digestHex} for key ${this.keyPath}`);
 
@@ -118,7 +118,8 @@ export class KmsService {
             const signatureDer = Buffer.from(signResponse.signature as Uint8Array);
 
             // Parse the DER-encoded signature to get R and S values
-            const parsedSignature = secp256k1.signatureImport(signatureDer);
+            // Assuming signatureDer is a Buffer
+            const parsedSignature = (secp256k1 as any).signatureImport(signatureDer);
             const r = BigNumber.from("0x" + parsedSignature.r.toString('hex'));
             const s = BigNumber.from("0x" + parsedSignature.s.toString('hex'));
 
@@ -150,7 +151,7 @@ export class KmsService {
             }
 
             // ethers.Signature object
-            const ethersSignature: ethersUtils.Signature = {
+            const ethersSignature: Signature = {
                 r: r.toHexString(),
                 s: s.toHexString(),
                 recoveryParam: recoveryParam,
@@ -180,7 +181,7 @@ export class KmsService {
     }
 
 
-    public async signEthereumTransaction(transactionRequest: TransactionRequest): Promise<string | null> {
+    public async signEthereumTransaction(transactionRequest: providers.TransactionRequest): Promise<string | null> {
         logger.debug({ txData: transactionRequest }, "KmsService: Attempting to sign Ethereum transaction.");
 
         if (!transactionRequest.from) {
