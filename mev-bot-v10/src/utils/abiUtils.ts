@@ -7,17 +7,17 @@ import { utils as ethersUtils } from 'ethers';
 // Assuming 'src/abis' is copied to 'dist/abis' during build,
 // and this file 'abiUtils.js' will be in 'dist/utils'.
 // So, the path from 'dist/utils' to 'dist/abis' is '../abis'.
-const ABI_DIR = path.join(__dirname, '../abis'); 
+const ABI_DIR = path.join(__dirname, '../abis');
 
 export interface IAbiCache {
-    loadAbi(name: string, filePath?: string): Promise<ethersUtils.Fragment[] | null>;
-    getAbi(name: string): Promise<ethersUtils.Fragment[] | null>;
+    loadAbi(name: string, filePath?: string): Promise<readonly ethersUtils.Fragment[] | null>;
+    getAbi(name: string): Promise<readonly ethersUtils.Fragment[] | null>;
     // Allow addAbi to take string arrays which will be converted, or Fragment arrays
     addAbi(name: string, abi: ethersUtils.Fragment[] | ReadonlyArray<string>): void;
 }
 
 export class AbiCache implements IAbiCache {
-    private cache: Map<string, ethersUtils.Fragment[]> = new Map();
+    private cache: Map<string, readonly ethersUtils.Fragment[]> = new Map();
 
     constructor(preloadAbis?: { name: string, path?: string, abi?: ethersUtils.Fragment[] | ReadonlyArray<string> }[]) {
         if (preloadAbis) {
@@ -31,7 +31,7 @@ export class AbiCache implements IAbiCache {
         }
     }
 
-    async loadAbi(name: string, filePath?: string): Promise<ethersUtils.Fragment[] | null> {
+    async loadAbi(name: string, filePath?: string): Promise<readonly ethersUtils.Fragment[] | null> {
         const lowerCaseName = name.toLowerCase();
         if (this.cache.has(lowerCaseName)) {
             return this.cache.get(lowerCaseName)!;
@@ -40,9 +40,10 @@ export class AbiCache implements IAbiCache {
         try {
             const abiString = await fs.readFile(fPath, 'utf-8');
             // JSON.parse will produce an array of objects/strings, which Interface constructor can handle
-            const abiInput = JSON.parse(abiString) as (string | ethersUtils.JsonFragment)[];
+            // Changed JsonFragment to Fragment as per error message hint and Interface constructor flexibility
+            const abiInput = JSON.parse(abiString) as (string | ethersUtils.Fragment)[];
             const iface = new ethersUtils.Interface(abiInput);
-            const fragments = iface.fragments;
+            const fragments = iface.fragments; // iface.fragments is already readonly ethersUtils.Fragment[]
             this.cache.set(lowerCaseName, fragments);
             console.log(`ABI Cache: Loaded ABI for ${name} from ${fPath}`);
             return fragments;
@@ -52,10 +53,11 @@ export class AbiCache implements IAbiCache {
         }
     }
 
-    async getAbi(name: string): Promise<ethersUtils.Fragment[] | null> {
+    async getAbi(name: string): Promise<readonly ethersUtils.Fragment[] | null> {
         const lowerCaseName = name.toLowerCase();
         if (!this.cache.has(lowerCaseName)) {
-            return this.loadAbi(name); // loadAbi handles caching with lowerCaseName key from original name
+            // loadAbi now returns readonly Fragment[], which is compatible
+            return this.loadAbi(name);
         }
         return this.cache.get(lowerCaseName) || null;
     }
@@ -64,6 +66,7 @@ export class AbiCache implements IAbiCache {
         const lowerCaseName = name.toLowerCase();
         try {
             const iface = new ethersUtils.Interface(abi);
+            // iface.fragments is readonly Fragment[], compatible with cache type
             this.cache.set(lowerCaseName, iface.fragments);
             console.log(`ABI Cache: Manually added/processed ABI for ${name}`);
         } catch (error) {
@@ -158,3 +161,4 @@ export const globalAbiCache = new AbiCache([
 // globalAbiCache.loadAbi('MEVBotV8Executor');
 // globalAbiCache.loadAbi('SushiSwapRouter'); // Assuming SushiSwapRouter.json is in ABI_DIR
 // These will be loaded on first call to getAbi('MEVBotV8Executor') or getAbi('SushiSwapRouter') if not preloaded.
+```

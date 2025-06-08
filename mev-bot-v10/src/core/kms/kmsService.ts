@@ -1,6 +1,6 @@
 import { KeyManagementServiceClient, protos } from '@google-cloud/kms';
-import { ethers, utils as ethersUtils, providers, BigNumber } from 'ethers'; // Removed Signature and SignatureLike from root
-import { SignatureLike } from 'ethers/lib/utils'; // Deep import for SignatureLike
+import { ethers, utils as ethersUtils, providers, BigNumber } from 'ethers';
+// Removed: import { SignatureLike } from 'ethers/lib/utils';
 import { ConfigService } from '../config/configService'; // Adjust path
 import { getLogger } from '../logger/loggerService'; // Adjust path
 // elliptic is a good library for EC operations, including signature parsing and public key recovery
@@ -9,6 +9,13 @@ import { ec as EC } from 'elliptic';
 const logger = getLogger();
 const secp256k1 = new EC('secp256k1');
 
+// Local type for the signature object structure, compatible with ethers v5 utilities
+interface KmsInternalSignature {
+    r: string;
+    s: string;
+    recoveryParam?: number; // Based on what's assigned
+    // v?: number; // Optional, for completeness with ethers' expectations
+}
 
 // Helper to convert PEM public key to uncompressed hex, then to Ethereum address
 function pemToEthereumAddress(pemPublicKey: string): string | null {
@@ -101,7 +108,7 @@ export class KmsService {
         }
     }
 
-    public async signTransactionDigest(digestHex: string): Promise<SignatureLike | null> { // Updated return type
+    public async signTransactionDigest(digestHex: string): Promise<KmsInternalSignature | null> { // Updated return type
         const digestBuffer = Buffer.from(digestHex.slice(2), 'hex');
         logger.debug(`KmsService: Signing digest ${digestHex} for key ${this.keyPath}`);
 
@@ -152,7 +159,7 @@ export class KmsService {
             }
 
             // ethers.Signature object
-            const ethersSignature: SignatureLike = { // Use directly imported SignatureLike
+            const ethersSignature: KmsInternalSignature = { // Use local KmsInternalSignature
                 r: r.toHexString(),
                 s: s.toHexString(),
                 recoveryParam: recoveryParam,

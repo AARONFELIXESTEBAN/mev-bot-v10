@@ -2,7 +2,7 @@
 
 import { ethers, BigNumber } from 'ethers';
 // +++ FIX: Corrected the relative path from '../../../../' to '../../../'
-import { DecodedTransactionInput } from '../../../shared/types';
+import { DecodedTransactionInput } from '@shared/types';
 import { TokenInfo, DexPair } from '../utils/typeUtils';
 import { getLogger } from '../core/logger/loggerService';
 

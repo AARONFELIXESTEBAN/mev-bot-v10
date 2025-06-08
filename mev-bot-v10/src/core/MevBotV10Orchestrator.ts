@@ -12,7 +12,7 @@ import { SmartContractInteractionService } from './smartContract/smartContractSe
 import { PriceService } from '../services/price/priceService';
 import { OpportunityIdentificationService, ProcessedMempoolTransaction, PotentialOpportunity } from '../services/opportunity/opportunityService';
 import { SimulationService, SimulationResult } from '../services/simulation/simulationService';
-import { FilterableTransaction } from '../../shared/types';
+import { FilterableTransaction } from '@shared/types';
 import { DexArbitrageStrategy } from '../strategies/dexArbitrageStrategy'; // Paper Trading Logic
 import { TokenInfo } from '../utils/typeUtils';
 

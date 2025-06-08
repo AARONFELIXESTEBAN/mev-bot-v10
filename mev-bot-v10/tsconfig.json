@@ -7,6 +7,10 @@
     "outDir": "./dist",
     // "rootDir": "./src", // Removed
     "rootDirs": ["./src", "./shared"], // Added
+    "baseUrl": "./", // Added
+    "paths": {       // Added
+      "@shared/*": ["shared/*"]
+    },
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
