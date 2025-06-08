@@ -4,27 +4,33 @@
     "module": "commonjs",
     "lib": ["ES2020", "DOM"],
     "declaration": true,
-    "outDir": "./dist",
-    // "rootDir": "./src", // Removed
-    "rootDirs": ["./src", "./shared"], // Added
-    "baseUrl": "./", // Added
-    "paths": {
-      "@shared/*": ["shared/*"],
-      "@core/*": ["src/core/*"],
-      "@services/*": ["src/services/*"],
-      "@utils/*": ["src/utils/*"],
-      "@arbitrage/*": ["src/arbitrage/*"],
-      "@strategies/*": ["src/strategies/*"],
-      "@interfaces/*": ["src/interfaces/*"],
-      "@abis/*": ["src/abis/*"]
-    },
     "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": false,
+    "inlineSourceMap": true,
+    "inlineSources": true,
+    "experimentalDecorators": true,
+    "strictPropertyInitialization": false,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node"
+    "outDir": "dist",
+    "baseUrl": ".", // Changed from "./src" to "." (project root)
+    "paths": {
+      "@core/*": ["src/core/*"],       // Paths are now relative to project root
+      "@services/*": ["src/services/*"],
+      "@arbitrage/*": ["src/arbitrage/*"],
+      "@utils/*": ["src/utils/*"],
+      "@shared/*": ["shared/*"],       // Path to shared is now direct from project root
+      "@interfaces/*": ["src/interfaces/*"], // Added for consistency from previous plan
+      "@abis/*": ["src/abis/*"]             // Added for consistency from previous plan
+    }
   },
-  "include": ["src/**/*", "shared/**/*"], // Updated
-  "exclude": ["node_modules", "dist", "tests"]
+  "include": ["src/**/*.ts", "shared/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }
