@@ -193,4 +193,21 @@ export class RpcService {
         }
         return null; // Should not be reached if retries > 0
     }
+
+    public closeAllWebSocketProviders(): void {
+        logger.info("RpcService: Attempting to close all active WebSocket providers...");
+        this.webSocketProviders.forEach((provider, network) => {
+            try {
+                if (provider && provider._websocket) {
+                    logger.info(`RpcService: Closing WebSocket provider for network: ${network}`);
+                    provider.removeAllListeners(); // Clean up any direct listeners on the provider itself
+                    provider._websocket.close(1000, "RpcService shutting down all WebSockets");
+                }
+            } catch (e) {
+                logger.error({ err: e, network }, `RpcService: Error closing WebSocket provider for ${network}.`);
+            }
+        });
+        this.webSocketProviders.clear(); // Clear the map
+        logger.info("RpcService: All WebSocket providers closure attempts finished and map cleared.");
+    }
 }
