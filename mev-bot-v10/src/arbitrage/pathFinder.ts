@@ -164,4 +164,3 @@ function findTokenInfo(address: string, symbolHint: string, knownTokens: TokenIn
     // return { address, symbol: symbolHint || "UNKNOWN", decimals: 18 }; // Defaulting decimals, bad idea
     return undefined;
 }
-```

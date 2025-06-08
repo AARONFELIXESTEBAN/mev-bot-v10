@@ -144,4 +144,3 @@ export const globalAbiCache = new AbiCache([
 // Example: To load SushiSwapRouter dynamically if not preloaded:
 // globalAbiCache.loadAbi('SushiSwapRouter', path.join(ABI_DIR, 'SushiSwapRouter.json'));
 // Or ensure SushiSwapRouter.json is present in abis folder and use globalAbiCache.getAbi('SushiSwapRouter')
-```
