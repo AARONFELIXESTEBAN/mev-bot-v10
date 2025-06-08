@@ -11,7 +11,9 @@ import { SmartContractInteractionService } from './smartContract/smartContractSe
 import { PriceService } from '../services/price/priceService';
 import { OpportunityIdentificationService, ProcessedMempoolTransaction, PotentialOpportunity } from '../services/opportunity/opportunityService';
 import { SimulationService, SimulationResult } from '../services/simulation/simulationService';
+import { FilterableTransaction } from '../../shared/types';
 import { DexArbitrageStrategy } from '../strategies/dexArbitrageStrategy'; // Paper Trading Logic
+import { TokenInfo } from '../utils/typeUtils';
 
 let logger: pino.Logger; // Will be initialized after config
 
@@ -171,7 +173,7 @@ export class MevBotV10Orchestrator {
                 // The payload should be a FilterableTransaction (which extends ethers.TransactionResponse)
                 // and might have a `decodedInput` field.
                 // For OpportunityIdentificationService, we need to map this to ProcessedMempoolTransaction.
-                const mempoolTxPayload = message.payload as any; // Cast carefully or define shared types
+                const mempoolTxPayload = message.payload as FilterableTransaction;
 
                 // Map to ProcessedMempoolTransaction for OpportunityIdentificationService
                 const processedTx: ProcessedMempoolTransaction = {
@@ -187,7 +189,10 @@ export class MevBotV10Orchestrator {
                     recipient: mempoolTxPayload.decodedInput?.to || mempoolTxPayload.from, // 'to' in swap args is recipient
                     txTimestamp: message.timestamp || Date.now(), // Use publisher's timestamp or now
                     gasPrice: mempoolTxPayload.gasPrice?.toString(),
-                    // blockNumber: mempoolTxPayload.blockNumber, // Usually not available for true mempool tx
+                    // Add these for EIP-1559:
+                    baseFeePerGas: mempoolTxPayload.maxFeePerGas?.toString(),
+                    priorityFeePerGas: mempoolTxPayload.maxPriorityFeePerGas?.toString(),
+                    blockNumber: mempoolTxPayload.blockNumber ?? undefined,
                 };
 
                 if (!ethers.utils.isAddress(processedTx.routerAddress) || processedTx.path.length < 2) {
@@ -260,7 +265,7 @@ export class MevBotV10Orchestrator {
         }
     }
 
-    private get baseToken(): TokenInfo { // Helper to get baseToken details from config for logging etc.
+    private get baseToken(): TokenInfo { // Ensure TokenInfo here is the imported type
         return {
             address: this.configService.getOrThrow('BASE_TOKEN_ADDRESS'),
             symbol: this.configService.get('BASE_TOKEN_SYMBOL') || 'WETH',

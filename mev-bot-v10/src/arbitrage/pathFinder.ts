@@ -22,6 +22,8 @@ export interface DecodedMempoolSwap {
     amountInMax?: BigNumber;  // For exact output swaps
     recipient: string;
     txTimestamp: number; // Timestamp from when the tx was observed/processed
+    leg1PairAddress?: string; // Address of the pair for the first leg of the swap
+    blockNumber?: number; // Block number of the triggering tx
 }
 
 // Represents a specific leg of an arbitrage
@@ -40,6 +42,7 @@ export interface ArbitragePath {
     leg1: ArbitrageLeg;
     leg2: ArbitrageLeg;
     discoveryTimestamp: number; // When this path was found
+    sourceTxBlockNumber?: number; // Block number of the source transaction
 }
 
 // Information about available DEX pools needed by the pathfinder
@@ -93,7 +96,7 @@ export function findTwoHopOpportunities(
                 (poolToken1Addr === tokenX.address.toLowerCase() && poolToken0Addr === baseToken.address.toLowerCase())) {
 
                 const leg1DexName = mempoolSwap.routerName;
-                const leg1PairAddress = (mempoolSwap as any).pairAddress || "UNKNOWN_LEG1_PAIR";
+                const leg1PairAddress = mempoolSwap.leg1PairAddress || "UNKNOWN_LEG1_PAIR";
 
                 const path: ArbitragePath = {
                     id: `${leg1PairAddress}-${pool.pairAddress}-${tokenX.symbol}`,
@@ -112,6 +115,7 @@ export function findTwoHopOpportunities(
                         tokenOut: baseToken,
                     },
                     discoveryTimestamp: Date.now(),
+                    sourceTxBlockNumber: mempoolSwap.blockNumber,
                 };
                 opportunities.push(path);
                 logger.info({ pathId: path.id, leg1Dex: path.leg1.dexName, leg2Dex: path.leg2.dexName }, `PathFinder: Potential 2-hop opportunity found for ${baseToken.symbol}->${tokenX.symbol}->${baseToken.symbol}`);

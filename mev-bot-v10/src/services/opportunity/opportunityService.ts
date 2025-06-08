@@ -13,6 +13,7 @@ export interface ProcessedMempoolTransaction extends DecodedMempoolSwap {
     baseFeePerGas?: string; // from block of triggering tx (if available)
     priorityFeePerGas?: string; // from triggering tx
     blockNumber?: number; // block number of the triggering tx, if already mined (less likely for true mempool)
+    leg1PairAddress?: string; // Address of the pair for the first leg of the swap
 }
 
 export interface PotentialOpportunity extends ArbitragePath {
@@ -26,6 +27,8 @@ export class OpportunityIdentificationService {
     private baseToken: TokenInfo;
     private coreWhitelistedTokens: TokenInfo[] = [];
     private knownDexPools: DexPoolInfo[] = [];
+    private dexFactories: { [routerName: string]: string } = {};
+
 
     constructor(
         private configService: ConfigService,
@@ -41,6 +44,12 @@ export class OpportunityIdentificationService {
             decimals: baseTokenDecimals,
             name: baseTokenSymbol
         };
+
+        this.dexFactories = this.configService.get('DEX_FACTORIES') || {};
+        if (Object.keys(this.dexFactories).length === 0) {
+            logger.warn("OpportunityIdentificationService: DEX_FACTORIES not configured. Cannot determine leg1PairAddress.");
+        }
+
 
         this.initializeWhitelistedTokensAndPools();
         logger.info(`OpportunityIdentificationService: Initialized. Base Token: ${this.baseToken.symbol}.`);
@@ -118,6 +127,29 @@ export class OpportunityIdentificationService {
             logger.warn("OpportunityIDService: No known DEX pools or whitelisted tokens available for pathfinding. Ensure configuration is complete.");
             return [];
         }
+
+        // Get leg1PairAddress
+        const factoryAddress = this.dexFactories[processedMempoolTx.routerName];
+        if (factoryAddress && processedMempoolTx.path && processedMempoolTx.path.length >= 2) {
+            try {
+                const leg1PairAddress = await this.scService.getPairAddress(
+                    factoryAddress,
+                    processedMempoolTx.path[0],
+                    processedMempoolTx.path[1]
+                );
+                if (leg1PairAddress) {
+                    processedMempoolTx.leg1PairAddress = leg1PairAddress;
+                    logger.debug({ txHash: processedMempoolTx.txHash, leg1PairAddress }, "Successfully determined leg1PairAddress.");
+                } else {
+                    logger.warn({ txHash: processedMempoolTx.txHash, router: processedMempoolTx.routerName, token0: processedMempoolTx.path[0], token1: processedMempoolTx.path[1] }, "Could not determine leg1PairAddress (getPair returned null or zero address).");
+                }
+            } catch (error) {
+                logger.error({ค่าerr: error, txHash: processedMempoolTx.txHash }, "Error fetching leg1PairAddress.");
+            }
+        } else if (!factoryAddress) {
+            logger.warn({ txHash: processedMempoolTx.txHash, routerName: processedMempoolTx.routerName }, "No factory address configured for routerName. Cannot get leg1PairAddress.");
+        }
+
 
         // Ensure all token addresses in the mempool tx path are EIP-55 checksummed if necessary by pathFinder or downstream
         // (ethers usually returns checksummed addresses from contract calls)

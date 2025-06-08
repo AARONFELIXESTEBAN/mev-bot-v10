@@ -24,3 +24,7 @@ export interface DecodedTransactionInput {
     amountBMin?: ethers.BigNumber;
     liquidity?: ethers.BigNumber;
 }
+
+export interface FilterableTransaction extends ethers.providers.TransactionResponse {
+    decodedInput?: DecodedTransactionInput & { routerName: string };
+}
