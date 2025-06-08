@@ -1,6 +1,6 @@
 import { ConfigService } from '../../core/config/configService';
 import { getLogger } from '../../core/logger/loggerService';
-import { PriceService, DexPairPriceInfo } from './priceService'; // Adjust path
+import { PriceService, DexPairPriceInfo } from '../price/price.service'; // Corrected path
 import { findTwoHopOpportunities, DecodedMempoolSwap, ArbitragePath, DexPoolInfo, TokenInfo } from '../../arbitrage/pathFinder'; // Adjust path
 import { SmartContractInteractionService } from '../../core/smartContract/smartContractService';
 import { ethers } from 'ethers';

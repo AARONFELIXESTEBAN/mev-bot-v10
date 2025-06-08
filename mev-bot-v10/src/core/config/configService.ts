@@ -3,149 +3,234 @@ import path from 'path';
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 import pino from 'pino'; // Temporary logger for config service itself
 
-// Temporary simple logger for setup phase
+// Import shared interfaces
+import {
+    AppConfig,
+    NetworkRpcConfig,
+    DexRouterConfig,
+    KnownDexPoolEntryConfig,
+    InitialPortfolioAssetConfig,
+    isValidAppConfig // Optional: for validation after loading
+} from '../../interfaces/appConfig.interface';
+
+// Temporary simple logger for setup phase, as main logger depends on this config
 const tempLogger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
 // Load .env file from project root if it exists (mainly for local development)
 const envPath = path.resolve(process.cwd(), '.env');
 dotenv.config({ path: envPath });
 
-export interface NetworkRpcConfig {
-    httpUrl?: string;
-    wssUrl?: string;
-}
-
-export interface AppConfig {
-    nodeEnv: 'development' | 'production' | 'test';
-    logLevel: string;
-    gcpProjectId?: string; // Optional, as it might be inferred from ADC
-
-    rpcUrls: { [networkName: string]: NetworkRpcConfig };
-
-    kmsKeyPath?: string; // Full path to KMS key version for signing
-
-    firestoreProjectId?: string; // Optional, can be same as gcpProjectId
-    firestoreCollectionV10: string;
-
-    // For Secret Manager
-    // Array of secret names (short names, not full paths) to load if in production
-    secretsToLoad?: string[];
-}
-
 export class ConfigService {
-    private config: Partial<AppConfig> = {}; // Partial initially, becomes full after load
+    // Use the imported AppConfig. All values are initially undefined or string from process.env
+    private envVars: { [key: string]: string | undefined } = process.env;
+    private config: AppConfig; // This will hold the parsed and typed config
 
     constructor() {
-        this.loadFromEnv();
+        this.config = this.loadAndParseEnv();
+        tempLogger.info('ConfigService: Initial configuration loaded and parsed from environment variables.');
+        // Optionally validate after loading
+        if (!isValidAppConfig(this.config)) {
+            // isValidAppConfig should log specific errors
+            tempLogger.fatal("ConfigService: Initial configuration is invalid. Please check environment variables and .env file against appConfig.interface.ts requirements.");
+            // Depending on severity, you might throw an error or exit
+            // For now, we'll allow the app to continue starting so other services can report missing specific configs.
+            // throw new Error("Initial configuration is invalid.");
+        }
     }
 
-    private loadFromEnv(): void {
-        this.config = {
-            nodeEnv: (process.env.NODE_ENV as AppConfig['nodeEnv']) || 'development',
-            logLevel: process.env.LOG_LEVEL || 'info',
-            gcpProjectId: process.env.GCP_PROJECT_ID,
-            rpcUrls: {
-                mainnet: { // Example, should be defined in .env or secrets
-                    httpUrl: process.env.RPC_URL_MAINNET_HTTP,
-                    wssUrl: process.env.RPC_URL_MAINNET_WSS,
-                },
-                sepolia: {
-                    httpUrl: process.env.RPC_URL_SEPOLIA_HTTP,
-                    wssUrl: process.env.RPC_URL_SEPOLIA_WSS,
-                }
-                // Add other networks as needed, loaded from env
-            },
-            kmsKeyPath: process.env.KMS_KEY_PATH,
-            firestoreProjectId: process.env.FIRESTORE_PROJECT_ID || process.env.GCP_PROJECT_ID,
-            firestoreCollectionV10: process.env.FIRESTORE_COLLECTION_V10 || 'mevBotV10Data',
-            secretsToLoad: process.env.SECRETS_TO_LOAD?.split(',').map(s => s.trim()) || [],
+    private loadAndParseEnv(): AppConfig {
+        // All values from process.env are strings or undefined.
+        // The AppConfig interface defined in appConfig.interface.ts expects these raw string values.
+        // Parsing to numbers, booleans, arrays, or JSON objects happens in specific getters or service constructors.
+        return {
+            NODE_ENV: (this.envVars.NODE_ENV || 'development') as AppConfig['NODE_ENV'],
+            LOG_LEVEL: this.envVars.LOG_LEVEL || 'info',
+            GCP_PROJECT_ID: this.envVars.GCP_PROJECT_ID,
+
+            RPC_URL_MAINNET_HTTP: this.envVars.RPC_URL_MAINNET_HTTP,
+            RPC_URL_MAINNET_WSS: this.envVars.RPC_URL_MAINNET_WSS,
+            RPC_URL_SEPOLIA_HTTP: this.envVars.RPC_URL_SEPOLIA_HTTP,
+            RPC_URL_SEPOLIA_WSS: this.envVars.RPC_URL_SEPOLIA_WSS,
+
+            KMS_KEY_PATH: this.envVars.KMS_KEY_PATH,
+
+            FIRESTORE_PROJECT_ID: this.envVars.FIRESTORE_PROJECT_ID || this.envVars.GCP_PROJECT_ID,
+            FIRESTORE_COLLECTION_V10: this.envVars.FIRESTORE_COLLECTION_V10 || 'mevBotV10Data_default',
+            FIRESTORE_PAPER_TRADE_COLLECTION: this.envVars.FIRESTORE_PAPER_TRADE_COLLECTION || 'paperTradesV10_default',
+
+            MEV_BOT_MEMPOOL_WS_URL: this.envVars.MEV_BOT_MEMPOOL_WS_URL || '', // Required, checked by isValidAppConfig
+            MEMPOOL_MAX_RECONNECT_ATTEMPTS: this.envVars.MEMPOOL_MAX_RECONNECT_ATTEMPTS,
+            MEMPOOL_RECONNECT_INTERVAL_MS: this.envVars.MEMPOOL_RECONNECT_INTERVAL_MS,
+
+            BASE_TOKEN_ADDRESS: this.envVars.BASE_TOKEN_ADDRESS || '', // Required
+            BASE_TOKEN_SYMBOL: this.envVars.BASE_TOKEN_SYMBOL || 'WETH',
+            BASE_TOKEN_DECIMALS: this.envVars.BASE_TOKEN_DECIMALS || '18',
+            CORE_WHITELISTED_TOKENS_CSV: this.envVars.CORE_WHITELISTED_TOKENS_CSV || '',
+
+            KNOWN_DEX_POOLS_CONFIG: this.envVars.KNOWN_DEX_POOLS_CONFIG,
+            DEX_ROUTERS: this.envVars.DEX_ROUTERS,
+
+            DEFAULT_SWAP_AMOUNT_BASE_TOKEN: this.envVars.DEFAULT_SWAP_AMOUNT_BASE_TOKEN || '0.1',
+            MIN_NET_PROFIT_BASE_TOKEN_WEI: this.envVars.MIN_NET_PROFIT_BASE_TOKEN_WEI || '1000000000000000', // 0.001 ETH
+
+            PROFIT_REALISM_MAX_PERCENTAGE: this.envVars.PROFIT_REALISM_MAX_PERCENTAGE || '50.0',
+            MAX_PROFIT_USD_V10: this.envVars.MAX_PROFIT_USD_V10 || '5000.0',
+            OPPORTUNITY_FRESHNESS_LIMIT_MS: this.envVars.OPPORTUNITY_FRESHNESS_LIMIT_MS || '15000',
+            MAX_BLOCK_AGE_FOR_OPPORTUNITY: this.envVars.MAX_BLOCK_AGE_FOR_OPPORTUNITY || '3',
+            DEFAULT_SWAP_GAS_UNITS: this.envVars.DEFAULT_SWAP_GAS_UNITS || '200000',
+            WETH_USD_PRICE_ESTIMATE: this.envVars.WETH_USD_PRICE_ESTIMATE || '2000.0',
+
+            PAPER_TRADING_MODE: this.envVars.PAPER_TRADING_MODE || 'true',
+            EXECUTION_ENABLED: this.envVars.EXECUTION_ENABLED || 'false',
+            LOG_DISCARDED_OPPORTUNITIES: this.envVars.LOG_DISCARDED_OPPORTUNITIES,
+            BLOCK_UPDATE_INTERVAL_MS: this.envVars.BLOCK_UPDATE_INTERVAL_MS,
+            INITIAL_PORTFOLIO: this.envVars.INITIAL_PORTFOLIO,
+            SECRETS_TO_LOAD: this.envVars.SECRETS_TO_LOAD,
         };
-        tempLogger.info('Configuration loaded from environment variables.');
     }
 
     public async loadSecretsFromGcp(): Promise<void> {
-        if (this.config.nodeEnv !== 'production' || !this.config.secretsToLoad || this.config.secretsToLoad.length === 0) {
-            tempLogger.info('Not in production or no secrets specified to load from GCP Secret Manager.');
+        if (this.config.NODE_ENV !== 'production' || !this.config.SECRETS_TO_LOAD) {
+            tempLogger.info('ConfigService: Not in production or no SECRETS_TO_LOAD specified.');
             return;
         }
 
-        if (!this.config.gcpProjectId) {
-            tempLogger.error('GCP_PROJECT_ID is not set. Cannot load secrets from Secret Manager.');
-            // In a real app, you might throw an error here or have a fallback.
+        const secretsToLoadArray = this.config.SECRETS_TO_LOAD.split(',').map(s => s.trim()).filter(s => s);
+        if (secretsToLoadArray.length === 0) {
+            tempLogger.info('ConfigService: SECRETS_TO_LOAD was empty after parsing.');
             return;
+        }
+
+        if (!this.config.GCP_PROJECT_ID) {
+            tempLogger.error('ConfigService: GCP_PROJECT_ID is not set. Cannot load secrets from Secret Manager.');
+            return; // Or throw
         }
 
         const secretClient = new SecretManagerServiceClient();
-        tempLogger.info(`Loading secrets from GCP Secret Manager for project ${this.config.gcpProjectId}: ${this.config.secretsToLoad.join(', ')}`);
+        tempLogger.info(`ConfigService: Loading secrets from GCP Secret Manager for project ${this.config.GCP_PROJECT_ID}: ${secretsToLoadArray.join(', ')}`);
 
-        for (const secretName of this.config.secretsToLoad) {
+        for (const secretName of secretsToLoadArray) {
             try {
-                const [version] = await secretClient.accessSecretVersion({
-                    name: `projects/${this.config.gcpProjectId}/secrets/${secretName}/versions/latest`,
-                });
+                const fullSecretPath = `projects/${this.config.GCP_PROJECT_ID}/secrets/${secretName}/versions/latest`;
+                const [version] = await secretClient.accessSecretVersion({ name: fullSecretPath });
 
                 if (version.payload?.data) {
                     const secretValue = version.payload.data.toString();
-                    // How to map secretName to a config property?
-                    // For now, let's assume secretName directly maps to an env var name.
-                    // process.env[secretName] = secretValue; // This makes it available via process.env
-
-                    // Or, update config object directly if names match AppConfig keys or a predefined mapping
-                    // This requires a more sophisticated mapping logic if secret names don't match config keys.
-                    // Example: if secretName is "RPC_URL_MAINNET_HTTP_SECRET", map to rpcUrls.mainnet.httpUrl
-                    // For simplicity, let's log and user must ensure env vars are set by this process or startup script
-                    tempLogger.info(`Secret ${secretName} loaded. Set it as process.env.${secretName.toUpperCase()} if not already.`);
-
-                    // A more direct update (example - requires careful key mapping):
-                    if (secretName === 'RPC_URL_MAINNET_HTTP' && this.config.rpcUrls?.mainnet) this.config.rpcUrls.mainnet.httpUrl = secretValue;
-                    else if (secretName === 'RPC_URL_MAINNET_WSS' && this.config.rpcUrls?.mainnet) this.config.rpcUrls.mainnet.wssUrl = secretValue;
-                    else if (secretName === 'KMS_KEY_PATH') this.config.kmsKeyPath = secretValue;
-                    // ... add more mappings as needed based on your secret naming strategy
-
+                    // Override the corresponding key in this.config.
+                    // The secretName from SECRETS_TO_LOAD should match a key in AppConfig.
+                    if (secretName in this.config) {
+                        (this.config as any)[secretName] = secretValue; // Type assertion needed here
+                        tempLogger.info(`ConfigService: Secret '${secretName}' loaded and updated in config.`);
+                    } else {
+                        tempLogger.warn(`ConfigService: Secret '${secretName}' loaded from GCP, but it does not directly map to a key in AppConfig. It will be available via process.env.${secretName} if set by GCP environment, but prefer direct AppConfig mapping.`);
+                        // Optionally, set it to process.env if that's the fallback mechanism
+                        // process.env[secretName] = secretValue;
+                    }
                 } else {
-                    tempLogger.warn(`Secret ${secretName} has no payload data.`);
+                    tempLogger.warn(`ConfigService: Secret ${secretName} has no payload data.`);
                 }
             } catch (error) {
-                tempLogger.error({ err: error, secretName }, `Failed to load secret: ${secretName}`);
-                // Decide if this is fatal or if defaults are acceptable
+                tempLogger.error({ err: error, secretName }, `ConfigService: Failed to load secret: ${secretName}`);
             }
         }
-        tempLogger.info('Finished attempting to load secrets from GCP Secret Manager.');
-        // Re-log or re-validate critical configs if they were expected from secrets
+        tempLogger.info('ConfigService: Finished attempting to load secrets from GCP Secret Manager.');
+        // Re-validate if critical configs were expected from secrets and might still be missing
+        if (!isValidAppConfig(this.config)) {
+             tempLogger.warn("ConfigService: Configuration may still be invalid after attempting to load secrets.");
+        }
     }
 
-
-    public get<K extends keyof AppConfig>(key: K): AppConfig[K] | undefined {
+    /**
+     * Gets a configuration value. Values are typically strings as they come from environment variables.
+     * Consumers of this service are responsible for parsing into appropriate types (number, boolean, JSON)
+     * or use specific typed getters if provided.
+     */
+    public get<K extends keyof AppConfig>(key: K): AppConfig[K] {
+        // This now directly returns the (potentially string) value from the parsed config.
+        // Type casting or parsing should be done by the consumer or in specific typed getters.
         return this.config[key];
     }
 
-    public getOrThrow<K extends keyof AppConfig>(key: K): AppConfig[K] {
+    /**
+     * Gets a configuration value and throws an error if it's missing or empty.
+     */
+    public getOrThrow<K extends keyof AppConfig>(key: K): NonNullable<AppConfig[K]> {
         const value = this.config[key];
         if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
-            throw new Error(`Configuration error: Missing required config key '${key}'`);
+            const errorMsg = `Configuration error: Missing or empty required config key '${key}'`;
+            tempLogger.fatal(errorMsg); // Use tempLogger as main logger might not be fully set up
+            throw new Error(errorMsg);
         }
-        return value;
+        return value as NonNullable<AppConfig[K]>;
     }
 
-    // Specific getter for RPC URLs for convenience
-    public getRpcConfig(networkName: string): NetworkRpcConfig | undefined {
-        return this.config.rpcUrls?.[networkName];
+    // Example of a specific typed getter (consumers should prefer these)
+    public getRpcUrlsForNetwork(networkName: string): NetworkRpcConfig | undefined {
+        const httpKey = `RPC_URL_${networkName.toUpperCase()}_HTTP` as keyof AppConfig;
+        const wssKey = `RPC_URL_${networkName.toUpperCase()}_WSS` as keyof AppConfig;
+
+        const httpUrl = this.config[httpKey] as string | undefined;
+        const wssUrl = this.config[wssKey] as string | undefined;
+
+        if (httpUrl || wssUrl) {
+            return { httpUrl, wssUrl };
+        }
+        return undefined;
     }
+
+    public getKnownDexPools(): KnownDexPoolEntryConfig[] {
+        const jsonString = this.get('KNOWN_DEX_POOLS_CONFIG');
+        if (jsonString) {
+            try {
+                return JSON.parse(jsonString) as KnownDexPoolEntryConfig[];
+            } catch (e) {
+                tempLogger.error({err: e, jsonString}, "Failed to parse KNOWN_DEX_POOLS_CONFIG JSON string.");
+                return [];
+            }
+        }
+        return [];
+    }
+
+    public getDexRouters(): DexRouterConfig {
+        const jsonString = this.get('DEX_ROUTERS');
+        if (jsonString) {
+            try {
+                return JSON.parse(jsonString) as DexRouterConfig;
+            } catch (e) {
+                tempLogger.error({err: e, jsonString}, "Failed to parse DEX_ROUTERS JSON string.");
+                return {};
+            }
+        }
+        return {};
+    }
+
+    public getInitialPortfolio(): InitialPortfolioAssetConfig {
+        const jsonString = this.get('INITIAL_PORTFOLIO');
+        if (jsonString) {
+            try {
+                return JSON.parse(jsonString) as InitialPortfolioAssetConfig;
+            } catch (e) {
+                tempLogger.error({err: e, jsonString}, "Failed to parse INITIAL_PORTFOLIO JSON string.");
+                return {};
+            }
+        }
+        return {};
+    }
+
 
     public isProduction(): boolean {
-        return this.config.nodeEnv === 'production';
+        return this.config.NODE_ENV === 'production';
     }
 }
 
-// Export a singleton instance
-// The initialization of secrets should be handled asynchronously at app startup.
-// const configService = new ConfigService();
-// export default configService;
-
-// Usage:
-// import { ConfigService } from './config.service';
-// const configService = new ConfigService();
-// await configService.loadSecretsFromGcp(); // Call this early in app bootstrap
-// export default configService;
-// This pattern is better for async init.
-// For this file structure, we'll export the class and expect instantiation and async loading in main.ts or similar.
+// Singleton export pattern:
+// const configServiceInstance = new ConfigService();
+// export default configServiceInstance;
+// To use this, ensure async operations like loadSecretsFromGcp are handled appropriately at app startup.
+// For example, in main.ts:
+// async function bootstrap() {
+//   await configServiceInstance.loadSecretsFromGcp();
+//   // ... rest of the app
+// }
+// bootstrap();
+// For now, exporting the class to be instantiated in main.ts which will handle async loading.
