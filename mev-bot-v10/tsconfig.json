@@ -2,29 +2,35 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "commonjs",
-    "lib": ["ES2020", "DOM"],
+    "lib": ["ES2020"],
     "declaration": true,
-    "outDir": "./dist",
-    // "rootDir": "./src", // Removed
-    "rootDirs": ["./src", "./shared"], // Added
-    "baseUrl": "./", // Added
-    "paths": {
-      "@shared/*": ["shared/*"],
-      "@core/*": ["src/core/*"],
-      "@services/*": ["src/services/*"],
-      "@utils/*": ["src/utils/*"],
-      "@arbitrage/*": ["src/arbitrage/*"],
-      "@strategies/*": ["src/strategies/*"],
-      "@interfaces/*": ["src/interfaces/*"],
-      "@abis/*": ["src/abis/*"]
-    },
     "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": false,
+    "inlineSourceMap": true,
+    "inlineSources": true,
+    "experimentalDecorators": true,
+    "strictPropertyInitialization": false,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node"
+    "outDir": "dist",
+
+    /* --- PATH ALIAS CONFIGURATION --- */
+    "baseUrl": "./src",  /* This is the crucial part that was likely missing or wrong. */
+    "paths": {
+      "@core/*": ["core/*"],
+      "@services/*": ["services/*"],
+      "@arbitrage/*": ["arbitrage/*"],
+      "@utils/*": ["utils/*"],
+      "@shared/*": ["../../shared/*"] /* This allows importing from the shared folder */
+    }
   },
-  "include": ["src/**/*", "shared/**/*"], // Updated
-  "exclude": ["node_modules", "dist", "tests"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }
