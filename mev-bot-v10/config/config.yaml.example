@@ -1,0 +1,109 @@
+# MEV Bot V10 - Example Main Configuration (config.yaml.example)
+
+# Global settings
+node_env: "development" # "production" or "development"
+log_level: "info" # "debug", "info", "warn", "error"
+
+# RPC Endpoints for different networks
+# These should be protected and ideally loaded from environment variables or Secret Manager in production
+rpc_urls:
+  mainnet: "https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID"
+  sepolia: "https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID"
+  # Add other networks like Arbitrum, Polygon etc. if needed
+
+# Google Cloud KMS configuration
+kms_config:
+  default_key_project_id: "your-gcp-project-id"
+  default_key_location_id: "global" # or your specific region
+  default_key_keyring_id: "your-mev-bot-keyring"
+  # Key path for the primary operational wallet used by the bot for signing (if any live trading)
+  # For paper trading, this might not be actively used for signing.
+  operational_wallet_key_path: "projects/your-gcp-project-id/locations/global/keyRings/your-mev-bot-keyring/cryptoKeys/main-operational-key/cryptoKeyVersions/1"
+
+# Google Cloud Firestore configuration (for DataCollectionService)
+firestore_config:
+  project_id: "your-gcp-project-id" # Optional: if different from GCE instance's project or if running locally
+  # database_id: "(default)" # Optional
+
+# Price Service Configuration
+price_service:
+  # How frequently to poll DEX pools if not primarily event-driven from mempool
+  dex_poll_interval_ms: 5000 # 5 seconds
+  # Configuration for specific DEXs to monitor
+  dex_sources:
+    uniswap_v2_mainnet:
+      router_address: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
+      factory_address: "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f"
+      monitored_lp_tokens: # List LP token addresses or pairs of underlying token addresses
+        - "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc" # USDC/WETH
+        - "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852" # WETH/WBTC
+    sushiswap_mainnet:
+      router_address: "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F"
+      factory_address: "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac"
+      monitored_lp_tokens:
+        - "0x06da0fd433C1A5d7a4faa01111c044910A1848BC" # USDC/WETH (Sushi)
+        - "0x795065dCc9f64b5614C407a6EFDC400DA6221FB0" # WBTC/ETH (Sushi)
+  # If PriceService directly consumes from MempoolIngestionService stream:
+  # mempool_stream_source_url: "http://localhost:PORT_OF_MEMPOOL_SVC/stream" # If applicable
+
+# Opportunity Identification Service Configuration (for 2-hop DEX arbitrage)
+opportunity_service:
+  # Define specific 2-hop arbitrage paths to monitor
+  dex_arbitrage_2hop_paths:
+    - name: "WETH_USDC_WETH_UniV2_Sushi"
+      token_start: "WETH_ADDRESS" # Replace with actual WETH address
+      token_intermediate: "USDC_ADDRESS" # Replace with actual USDC address
+      token_end: "WETH_ADDRESS"
+      dex1_name: "uniswap_v2_mainnet" # Must match a key in price_service.dex_sources
+      dex2_name: "sushiswap_mainnet"  # Must match a key in price_service.dex_sources
+      # Pool addresses for each leg (important for direct querying and ensuring correct routing)
+      pool1_address: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc" # WETH/USDC on UniV2
+      pool2_address: "0x06da0fd433C1A5d7a4faa01111c044910A1848BC" # USDC/WETH on Sushi
+      # Add more paths as needed
+  min_profit_threshold_percentage: 0.1 # Minimum potential profit (before full simulation) to consider
+  default_trade_size_weth: "1000000000000000000" # 1 WETH in wei, for checking opportunities
+
+# Simulation Service Configuration
+simulation_service:
+  # Default slippage tolerance for trade simulations (might not be used for getAmountsOut but good for context)
+  # slippage_tolerance_percentage: 0.5
+  gas_estimation:
+    # Method: "fixed" or "rpc_gas_price" (to fetch dynamically)
+    # For MVP, dynamic fetching is preferred.
+    # safety_margin_multiplier: 1.2 # e.g., 20% margin on gas estimate from RPC
+    # Gas limits for typical DEX swaps (these are generous, can be optimized)
+    gas_limit_dex_swap1: 200000
+    gas_limit_dex_swap2: 250000
+  min_net_profit_threshold_weth: "1000000000000000" # 0.001 WETH in wei - minimum profit to trigger paper trade
+
+# Paper Trading Module / Strategy Configuration
+paper_trading_config:
+  # Collection name in Firestore for storing paper trades
+  firestore_collection_paper_trades: "paper_trades_dex_arb_v1"
+  # Initial virtual portfolio balances (token_address: amount_in_wei_string)
+  initial_portfolio:
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "10000000000000000000" # 10 WETH (Mainnet WETH)
+    # Add other assets if strategy involves them, though 2-hop WETH->TKN->WETH starts/ends with WETH
+
+# Orchestrator Settings
+orchestrator:
+  loop_interval_ms: 10000 # How often the main strategy loop runs (e.g., check for opportunities)
+  # This might be ignored if strategy is purely event-driven from price updates
+
+# ABIs: Paths are usually relative to the running application's CWD or configured in code.
+# It's common to load them dynamically within the SmartContractService using file paths.
+# abi_paths:
+#   ERC20: "./abis/ERC20.json"
+#   UniswapV2Pair: "./abis/UniswapV2Pair.json"
+#   UniswapV2Router02: "./abis/UniswapV2Router02.json"
+#   SushiSwapRouter: "./abis/SushiSwapRouter.json"
+
+# Secret Manager configuration (if used for API keys, RPC URLs etc.)
+# secret_manager_config:
+#   project_id: "your-gcp-project-id"
+#   secrets:
+#     - name: "INFURA_PROJECT_ID_MAINNET"
+#       env_var_name: "INFURA_PROJECT_ID_MAINNET" # Will be set as process.env.INFURA_PROJECT_ID_MAINNET
+#     - name: "ALCHEMY_API_KEY_MAINNET"
+#       env_var_name: "ALCHEMY_API_KEY_MAINNET"
+```

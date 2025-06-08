@@ -1,0 +1,147 @@
+// Placeholder for ABI Utilities
+import fs from 'fs/promises';
+import path from 'path';
+import { utils as ethersUtils } from 'ethers';
+
+// Path to the ABIs directory relative to the dist folder after compilation
+// This might need adjustment based on your final build structure or if ABIs are copied to dist
+const ABI_DIR = path.join(__dirname, '../../abis'); // if abis is at project root, and this file is in dist/utils
+
+export interface IAbiCache {
+    loadAbi(name: string, filePath?: string): Promise<ethersUtils.Fragment[] | null>;
+    getAbi(name: string): Promise<ethersUtils.Fragment[] | null>;
+    addAbi(name: string, abi: ethersUtils.Fragment[]): void;
+}
+
+export class AbiCache implements IAbiCache {
+    private cache: Map<string, ethersUtils.Fragment[]> = new Map();
+
+    constructor(preloadAbis?: { name: string, path?: string, abi?: ethersUtils.Fragment[] }[]) {
+        if (preloadAbis) {
+            for (const item of preloadAbis) {
+                if (item.abi) {
+                    this.addAbi(item.name, item.abi);
+                } else {
+                    this.loadAbi(item.name, item.path); // Fire-and-forget loading
+                }
+            }
+        }
+    }
+
+    async loadAbi(name: string, filePath?: string): Promise<ethersUtils.Fragment[] | null> {
+        if (this.cache.has(name)) {
+            return this.cache.get(name)!;
+        }
+        const fPath = filePath || path.join(ABI_DIR, `${name}.json`);
+        try {
+            const abiString = await fs.readFile(fPath, 'utf-8');
+            const abi = JSON.parse(abiString) as ethersUtils.Fragment[];
+            this.cache.set(name, abi);
+            console.log(`ABI Cache: Loaded ABI for ${name}`);
+            return abi;
+        } catch (error) {
+            console.error(`ABI Cache: Error loading ABI for ${name} from ${fPath}:`, error);
+            return null;
+        }
+    }
+
+    async getAbi(name: string): Promise<ethersUtils.Fragment[] | null> {
+        if (!this.cache.has(name)) {
+            // Attempt to lazy-load if not in cache
+            return this.loadAbi(name);
+        }
+        return this.cache.get(name) || null;
+    }
+
+    addAbi(name: string, abi: ethersUtils.Fragment[]): void {
+        this.cache.set(name, abi);
+        console.log(`ABI Cache: Manually added ABI for ${name}`);
+    }
+}
+
+// Pre-defined ABIs (can be loaded from JSON files as well)
+// Example minimal ERC20 ABI
+export const ERC20ABI: ethersUtils.Fragment[] = [
+    "function name() view returns (string)",
+    "function symbol() view returns (string)",
+    "function decimals() view returns (uint8)",
+    "function totalSupply() view returns (uint256)",
+    "function balanceOf(address owner) view returns (uint256)",
+    "function transfer(address to, uint amount) returns (bool)",
+    "function approve(address spender, uint amount) returns (bool)",
+    "function allowance(address owner, address spender) view returns (uint256)"
+];
+
+export const UniswapV2PairABI: ethersUtils.Fragment[] = [
+    "function name() external pure returns (string memory)",
+    "function symbol() external pure returns (string memory)",
+    "function decimals() external pure returns (uint8)",
+    "function totalSupply() external view returns (uint)",
+    "function balanceOf(address owner) external view returns (uint)",
+    "function allowance(address owner, address spender) external view returns (uint)",
+    "function approve(address spender, uint value) external returns (bool)",
+    "function transfer(address to, uint value) external returns (bool)",
+    "function transferFrom(address from, address to, uint value) external returns (bool)",
+    "function DOMAIN_SEPARATOR() external view returns (bytes32)",
+    "function PERMIT_TYPEHASH() external pure returns (bytes32)",
+    "function nonces(address owner) external view returns (uint)",
+    "function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external",
+    "event Approval(address indexed owner, address indexed spender, uint value)",
+    "event Transfer(address indexed from, address indexed to, uint value)",
+    "function MINIMUM_LIQUIDITY() external pure returns (uint)",
+    "function factory() external view returns (address)",
+    "function token0() external view returns (address)",
+    "function token1() external view returns (address)",
+    "function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
+    "function price0CumulativeLast() external view returns (uint)",
+    "function price1CumulativeLast() external view returns (uint)",
+    "function kLast() external view returns (uint)",
+    "event Mint(address indexed sender, uint amount0, uint amount1)",
+    "event Burn(address indexed sender, uint amount0, uint amount1, address indexed to)",
+    "event Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)",
+    "event Sync(uint112 reserve0, uint112 reserve1)",
+    "function initialize(address, address) external",
+    "function skim(address to) external",
+    "function sync() external"
+];
+
+export const UniswapV2RouterABI: ethersUtils.Fragment[] = [
+    "constructor(address _factory, address _WETH)",
+    "function WETH() view returns (address)",
+    "function factory() view returns (address)",
+    "function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB, uint256 liquidity)",
+    "function addLiquidityETH(address token, uint256 amountTokenDesired, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) payable returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)",
+    "function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut) pure returns (uint256 amountIn)",
+    "function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) pure returns (uint256 amountOut)",
+    "function getAmountsIn(uint256 amountOut, address[] path) view returns (uint256[] amounts)",
+    "function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)",
+    "function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) pure returns (uint256 amountB)",
+    "function removeLiquidity(address tokenA, address tokenB, uint256 liquidity, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB)",
+    "function removeLiquidityETH(address token, uint256 liquidity, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) returns (uint256 amountToken, uint256 amountETH)",
+    "function removeLiquidityETHSupportingFeeOnTransferTokens(address token, uint256 liquidity, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) returns (uint256 amountETH)",
+    "function removeLiquidityETHWithPermit(address token, uint256 liquidity, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline, bool approveMax, uint8 v, bytes32 r, bytes32 s) returns (uint256 amountToken, uint256 amountETH)",
+    "function removeLiquidityETHWithPermitSupportingFeeOnTransferTokens(address token, uint256 liquidity, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline, bool approveMax, uint8 v, bytes32 r, bytes32 s) returns (uint256 amountETH)",
+    "function removeLiquidityWithPermit(address tokenA, address tokenB, uint256 liquidity, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline, bool approveMax, uint8 v, bytes32 r, bytes32 s) returns (uint256 amountA, uint256 amountB)",
+    "function swapETHForExactTokens(uint256 amountOut, address[] path, address to, uint256 deadline) payable returns (uint256[] amounts)",
+    "function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) payable returns (uint256[] amounts)",
+    "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) payable",
+    "function swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)",
+    "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)",
+    "function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)",
+    "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)",
+    "function swapTokensForExactETH(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline) returns (uint256[] amounts)",
+    "function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline) returns (uint256[] amounts)"
+];
+
+// Initialize a default ABI cache instance
+export const globalAbiCache = new AbiCache([
+    { name: 'ERC20', abi: ERC20ABI },
+    { name: 'UniswapV2Pair', abi: UniswapV2PairABI },
+    { name: 'UniswapV2Router02', abi: UniswapV2RouterABI },
+    // Add SushiSwapRouter or other commonly used ABIs here if desired for preloading
+]);
+
+// Example: To load SushiSwapRouter dynamically if not preloaded:
+// globalAbiCache.loadAbi('SushiSwapRouter', path.join(ABI_DIR, 'SushiSwapRouter.json'));
+// Or ensure SushiSwapRouter.json is present in abis folder and use globalAbiCache.getAbi('SushiSwapRouter')
+```
