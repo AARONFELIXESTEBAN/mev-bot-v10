@@ -1,12 +1,26 @@
 import { ethers, BigNumber } from 'ethers';
-// Updated import statement:
-import { DecodedMempoolSwap } from '../interfaces/mempoolEvents.interface'; // Removed DecodedTransactionInput as it's part of DecodedMempoolSwap
+import { DecodedTransactionInput } from '../../mempool-ingestion-service/src/services/transactionDecoder'; // Adjust path as needed, or define a shared type
 import { TokenInfo, DexPair } from '../utils/typeUtils'; // Assuming these are defined in shared types
 import { getLogger } from '../core/logger/loggerService';
 
 const logger = getLogger();
 
-// Local definition of DecodedMempoolSwap REMOVED
+// Define a simplified DecodedMempoolTransaction for pathfinding context
+// This should align with what mempool-ingestion-service provides
+export interface DecodedMempoolSwap {
+    txHash: string;
+    routerName: string; // e.g., "UniswapV2Router02"
+    routerAddress: string;
+    functionName: string; // e.g., "swapExactETHForTokens"
+    path: string[]; // Token addresses [tokenIn, tokenOut] or [tokenIn, tokenIntermediate, tokenOut]
+    amountIn?: BigNumber;
+    amountOutMin?: BigNumber; // For exact input swaps
+    amountOut?: BigNumber;    // For exact output swaps
+    amountInMax?: BigNumber;  // For exact output swaps
+    recipient: string;
+    // blockNumber?: number; // Optional: block number if transaction is already mined (less likely for mempool)
+    txTimestamp: number; // Timestamp from when the tx was observed/processed
+}
 
 // Represents a specific leg of an arbitrage
 export interface ArbitrageLeg {
@@ -53,38 +67,36 @@ export interface DexPoolInfo {
  * @returns An array of potential ArbitragePath objects.
  */
 export function findTwoHopOpportunities(
-    mempoolSwap: DecodedMempoolSwap, // Now using imported interface
+    mempoolSwap: DecodedMempoolSwap,
     baseToken: TokenInfo, // e.g. WETH
     coreWhitelistedTokens: TokenInfo[],
     availableDexPools: DexPoolInfo[]
 ): ArbitragePath[] {
     const opportunities: ArbitragePath[] = [];
-    // Accessing decodedInput directly from the imported DecodedMempoolSwap type
-    logger.debug({ txHash: mempoolSwap.hash, path: mempoolSwap.decodedInput.path }, "PathFinder: Analyzing mempool swap for 2-hop arbitrage.");
+    logger.debug({ txHash: mempoolSwap.txHash, path: mempoolSwap.path }, "PathFinder: Analyzing mempool swap for 2-hop arbitrage.");
 
-    if (!mempoolSwap.decodedInput.path || mempoolSwap.decodedInput.path.length < 2) {
-        logger.debug({ txHash: mempoolSwap.hash }, "PathFinder: Mempool swap path is too short.");
+    if (!mempoolSwap.path || mempoolSwap.path.length < 2) {
+        logger.debug({ txHash: mempoolSwap.txHash }, "PathFinder: Mempool swap path is too short.");
         return opportunities;
     }
 
-    const tokenInAddr = mempoolSwap.decodedInput.path[0].toLowerCase();
-    const tokenOutAddr = mempoolSwap.decodedInput.path[mempoolSwap.decodedInput.path.length - 1].toLowerCase();
+    const tokenInAddr = mempoolSwap.path[0].toLowerCase();
+    const tokenOutAddr = mempoolSwap.path[mempoolSwap.path.length - 1].toLowerCase();
 
     // Scenario 1: Mempool swap is BaseToken -> TokenX (Leg 1: BaseToken -> TokenX)
     // We need to find a path TokenX -> BaseToken on another (or same) DEX (Leg 2)
     if (tokenInAddr === baseToken.address.toLowerCase() && tokenOutAddr !== baseToken.address.toLowerCase()) {
         const tokenXAddr = tokenOutAddr;
-        // Use findTokenInfo helper, assuming it's robust or coreWhitelistedTokens is comprehensive
         const tokenX = coreWhitelistedTokens.find(t => t.address.toLowerCase() === tokenXAddr) ||
-                       findTokenInfo(tokenXAddr, mempoolSwap.decodedInput.path[1], coreWhitelistedTokens);
+                       (mempoolSwap.path.length > 1 ? findTokenInfo(tokenXAddr, mempoolSwap.path[1], coreWhitelistedTokens) : undefined);
 
 
         if (!tokenX) {
-            logger.debug({ txHash: mempoolSwap.hash, tokenXAddr }, "PathFinder: Intermediate token (TokenX) from Leg 1 is not whitelisted or info not found.");
+            logger.debug({ txHash: mempoolSwap.txHash, tokenXAddr }, "PathFinder: Intermediate token (TokenX) from Leg 1 is not whitelisted or info not found.");
             return opportunities;
         }
 
-        logger.debug({ txHash: mempoolSwap.hash, baseToken: baseToken.symbol, tokenX: tokenX.symbol }, `PathFinder: Leg 1 identified: ${baseToken.symbol} -> ${tokenX.symbol} via mempool tx on ${mempoolSwap.decodedInput.routerName}.`);
+        logger.debug({ txHash: mempoolSwap.txHash, baseToken: baseToken.symbol, tokenX: tokenX.symbol }, `PathFinder: Leg 1 identified: ${baseToken.symbol} -> ${tokenX.symbol} via mempool tx on ${mempoolSwap.routerName}.`);
 
         // Find Leg 2: TokenX -> BaseToken from available DEX pools
         for (const pool of availableDexPools) {
@@ -95,19 +107,22 @@ export function findTwoHopOpportunities(
             if ((poolToken0Addr === tokenX.address.toLowerCase() && poolToken1Addr === baseToken.address.toLowerCase()) ||
                 (poolToken1Addr === tokenX.address.toLowerCase() && poolToken0Addr === baseToken.address.toLowerCase())) {
 
-                const leg1DexName = mempoolSwap.decodedInput.routerName;
-                // The pairAddress for leg1 should ideally be part of DecodedMempoolSwap if known by mempool-ingestion
-                // For now, we'll use a placeholder or assume it might be part of an enriched mempoolSwap object
-                const leg1PairAddress = (mempoolSwap as any).pairAddress || `PAIR_FOR_${mempoolSwap.decodedInput.path.join('_')}_ON_${leg1DexName}`;
+                // Found a potential Leg 2 pool
+                const leg1DexName = mempoolSwap.routerName; // Or derive more specifically if possible
+                // We need pair address for leg 1. This is tricky from router tx alone without more context.
+                // Assuming for now the mempoolSwap might contain LP address or we can infer it.
+                // For MVP, we might need to pass more info into mempoolSwap or make assumptions.
+                // Let's say mempoolSwap.pairAddress (hypothetical field) gives the LP of the first swap.
+                const leg1PairAddress = (mempoolSwap as any).pairAddress || "UNKNOWN_LEG1_PAIR";
 
 
                 const path: ArbitragePath = {
                     id: `${leg1PairAddress}-${pool.pairAddress}-${tokenX.symbol}`,
-                    sourceTxHash: mempoolSwap.hash, // Use hash from the root of DecodedMempoolSwap
+                    sourceTxHash: mempoolSwap.txHash,
                     tokenPath: [baseToken, tokenX, baseToken],
                     leg1: {
                         dexName: leg1DexName,
-                        pairAddress: leg1PairAddress,
+                        pairAddress: leg1PairAddress, // Needs to be determined more reliably
                         tokenIn: baseToken,
                         tokenOut: tokenX,
                     },
@@ -118,7 +133,7 @@ export function findTwoHopOpportunities(
                         tokenOut: baseToken,
                     },
                     discoveryTimestamp: Date.now(),
-                    // blockNumber: mempoolSwap.blockNumber // if available on DecodedMempoolSwap
+                    // blockNumber: mempoolSwap.blockNumber
                 };
                 opportunities.push(path);
                 logger.info({ pathId: path.id, leg1Dex: path.leg1.dexName, leg2Dex: path.leg2.dexName }, `PathFinder: Potential 2-hop opportunity found for ${baseToken.symbol}->${tokenX.symbol}->${baseToken.symbol}`);
@@ -126,23 +141,26 @@ export function findTwoHopOpportunities(
         }
     }
     // Scenario 2: Mempool swap is TokenX -> BaseToken (Less common to trigger from this direction for A->B->A, but possible for other patterns)
-    // This logic would be similar but inverted.
+    // else if (tokenOutAddr === baseToken.address.toLowerCase() && tokenInAddr !== baseToken.address.toLowerCase()) {
+    //     const tokenXAddr = tokenInAddr;
+    //     // ... logic for finding BaseToken -> TokenX as Leg 1 ...
+    // }
 
     return opportunities;
 }
 
 
 // Helper to find token info if only address is known from path
-function findTokenInfo(address: string, symbolHint: string | undefined, knownTokens: TokenInfo[]): TokenInfo | undefined {
+function findTokenInfo(address: string, symbolHint: string, knownTokens: TokenInfo[]): TokenInfo | undefined {
     let token = knownTokens.find(t => t.address.toLowerCase() === address.toLowerCase());
     if (token) return token;
-
-    if (symbolHint) { // Only search by symbol if a hint is available
-        token = knownTokens.find(t => t.symbol.toUpperCase() === symbolHint.toUpperCase());
-        if (token) {
-            // If found by symbol, ensure we return it with the correct address from the path
-            return { ...token, address: address };
-        }
+    // If not found by address, try by symbol (less reliable)
+    token = knownTokens.find(t => t.symbol.toUpperCase() === symbolHint.toUpperCase());
+    if (token) { // If found by symbol, create a new object with the correct address from path
+        return { ...token, address: address };
     }
+    // If still not found, create a placeholder (decimals would be unknown, problematic for calcs)
+    // logger.warn(`PathFinder: Token info for address ${address} (hint: ${symbolHint}) not found in whitelisted tokens. Using placeholder.`);
+    // return { address, symbol: symbolHint || "UNKNOWN", decimals: 18 }; // Defaulting decimals, bad idea
     return undefined;
 }

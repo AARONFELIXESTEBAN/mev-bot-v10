@@ -3,8 +3,8 @@ import { ConfigService } from '../../core/config/configService';
 import { getLogger } from '../../core/logger/loggerService';
 import { RpcService } from '../../core/rpc/rpcService';
 import { SmartContractInteractionService } from '../../core/smartContract/smartContractService';
-import { PotentialOpportunity } from '../opportunity/opportunityService'; // Corrected path
-import { PriceService } from '../price/price.service'; // Corrected path
+import { PotentialOpportunity } from './opportunityService'; // Assuming this is where PotentialOpportunity is defined
+import { PriceService } from './priceService'; // For USD price conversion
 import UniswapV2Router02ABI from '../../abis/UniswapV2Router02.json'; // For getAmountsOut
 
 const logger = getLogger();
