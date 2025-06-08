@@ -1,7 +1,9 @@
 import { ConfigService } from '../../core/config/configService';
 import { getLogger } from '../../core/logger/loggerService';
 import { PriceService, DexPairPriceInfo } from '../price/price.service'; // Corrected path
-import { findTwoHopOpportunities, DecodedMempoolSwap, ArbitragePath, DexPoolInfo, TokenInfo } from '../../arbitrage/pathFinder'; // Adjust path
+// Changed TokenInfo import source:
+import { findTwoHopOpportunities, DecodedMempoolSwap, ArbitragePath, DexPoolInfo } from '../../arbitrage/pathFinder';
+import { TokenInfo } from '../../utils/typeUtils'; // Added direct import for TokenInfo
 import { SmartContractInteractionService } from '../../core/smartContract/smartContractService';
 import { ethers } from 'ethers';
 
@@ -78,9 +80,7 @@ export class OpportunityIdentificationService {
 
         // Load known DEX pools from config (example structure)
         // Config should provide: pairAddress, dexName, token0Symbol, token1Symbol
-        const configuredPools = this.configService.get('KNOWN_DEX_POOLS_CONFIG') as Array<{
-            pairAddress: string, dexName: string, token0Symbol: string, token1Symbol: string
-        }> || [];
+        const configuredPools = this.configService.getKnownDexPools(); // Use typed getter
 
         for (const poolConfig of configuredPools) {
             const token0 = this.findTokenBySymbol(poolConfig.token0Symbol) || (poolConfig.token0Symbol === this.baseToken.symbol ? this.baseToken : undefined);
@@ -112,15 +112,12 @@ export class OpportunityIdentificationService {
     public async identifyOpportunitiesFromMempoolTx(
         processedMempoolTx: ProcessedMempoolTransaction
     ): Promise<PotentialOpportunity[]> {
-        logger.debug({ txHash: processedMempoolTx.txHash }, "OpportunityIDService: Processing mempool transaction for 2-hop opportunities.");
+        logger.debug({ txHash: processedMempoolTx.hash }, "OpportunityIDService: Processing mempool transaction for 2-hop opportunities.");
 
         if (this.knownDexPools.length === 0 || this.coreWhitelistedTokens.length === 0) {
             logger.warn("OpportunityIDService: No known DEX pools or whitelisted tokens available for pathfinding. Ensure configuration is complete.");
             return [];
         }
-
-        // Ensure all token addresses in the mempool tx path are EIP-55 checksummed if necessary by pathFinder or downstream
-        // (ethers usually returns checksummed addresses from contract calls)
 
         const potentialPaths = findTwoHopOpportunities(
             processedMempoolTx,
@@ -135,12 +132,6 @@ export class OpportunityIdentificationService {
 
         const opportunities: PotentialOpportunity[] = [];
         for (const path of potentialPaths) {
-            // For MVP, directly consider paths found by pathFinder as potential opportunities.
-            // More advanced: re-fetch current reserves for pools in 'path' using PriceService
-            // to ensure the opportunity hasn't vanished due to other txs.
-            // This adds latency but increases accuracy before full simulation.
-            // For now, we pass it on, simulation service will use fresh reserves.
-
             const opportunity: PotentialOpportunity = { ...path };
             opportunities.push(opportunity);
             logger.info({ pathId: path.id, sourceTx: path.sourceTxHash, leg1Dex: path.leg1.dexName, leg2Dex: path.leg2.dexName }, `OpportunityIDService: Identified potential 2-hop opportunity.`);

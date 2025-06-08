@@ -10,18 +10,19 @@ const ABI_DIR = path.join(__dirname, '../../abis'); // if abis is at project roo
 export interface IAbiCache {
     loadAbi(name: string, filePath?: string): Promise<ethersUtils.Fragment[] | null>;
     getAbi(name: string): Promise<ethersUtils.Fragment[] | null>;
-    addAbi(name: string, abi: ethersUtils.Fragment[]): void;
+    // Allow addAbi to take string arrays which will be converted, or Fragment arrays
+    addAbi(name: string, abi: ethersUtils.Fragment[] | ReadonlyArray<string>): void;
 }
 
 export class AbiCache implements IAbiCache {
     private cache: Map<string, ethersUtils.Fragment[]> = new Map();
 
-    constructor(preloadAbis?: { name: string, path?: string, abi?: ethersUtils.Fragment[] }[]) {
+    constructor(preloadAbis?: { name: string, path?: string, abi?: ethersUtils.Fragment[] | ReadonlyArray<string> }[]) {
         if (preloadAbis) {
             for (const item of preloadAbis) {
                 if (item.abi) {
                     this.addAbi(item.name, item.abi);
-                } else {
+                } else if (item.path) { // Ensure path is provided if abi is not
                     this.loadAbi(item.name, item.path); // Fire-and-forget loading
                 }
             }
@@ -29,16 +30,19 @@ export class AbiCache implements IAbiCache {
     }
 
     async loadAbi(name: string, filePath?: string): Promise<ethersUtils.Fragment[] | null> {
-        if (this.cache.has(name)) {
-            return this.cache.get(name)!;
+        if (this.cache.has(name.toLowerCase())) {
+            return this.cache.get(name.toLowerCase())!;
         }
         const fPath = filePath || path.join(ABI_DIR, `${name}.json`);
         try {
             const abiString = await fs.readFile(fPath, 'utf-8');
-            const abi = JSON.parse(abiString) as ethersUtils.Fragment[];
-            this.cache.set(name, abi);
-            console.log(`ABI Cache: Loaded ABI for ${name}`);
-            return abi;
+            // JSON.parse will produce an array of objects/strings, which Interface constructor can handle
+            const abiInput = JSON.parse(abiString) as (string | ethersUtils.JsonFragment)[];
+            const iface = new ethersUtils.Interface(abiInput);
+            const fragments = iface.fragments;
+            this.cache.set(name.toLowerCase(), fragments);
+            console.log(`ABI Cache: Loaded ABI for ${name} from ${fPath}`);
+            return fragments;
         } catch (error) {
             console.error(`ABI Cache: Error loading ABI for ${name} from ${fPath}:`, error);
             return null;
@@ -46,22 +50,26 @@ export class AbiCache implements IAbiCache {
     }
 
     async getAbi(name: string): Promise<ethersUtils.Fragment[] | null> {
-        if (!this.cache.has(name)) {
-            // Attempt to lazy-load if not in cache
-            return this.loadAbi(name);
+        if (!this.cache.has(name.toLowerCase())) {
+            return this.loadAbi(name); // loadAbi handles caching
         }
-        return this.cache.get(name) || null;
+        return this.cache.get(name.toLowerCase()) || null;
     }
 
-    addAbi(name: string, abi: ethersUtils.Fragment[]): void {
-        this.cache.set(name, abi);
-        console.log(`ABI Cache: Manually added ABI for ${name}`);
+    addAbi(name: string, abi: ethersUtils.Fragment[] | ReadonlyArray<string>): void {
+        try {
+            const iface = new ethersUtils.Interface(abi);
+            this.cache.set(name.toLowerCase(), iface.fragments);
+            console.log(`ABI Cache: Manually added/processed ABI for ${name}`);
+        } catch (error) {
+            console.error(`ABI Cache: Error processing ABI for ${name}:`, error);
+        }
     }
 }
 
 // Pre-defined ABIs (can be loaded from JSON files as well)
-// Example minimal ERC20 ABI
-export const ERC20ABI: ethersUtils.Fragment[] = [
+// Changed type annotation to ReadonlyArray<string>
+export const ERC20ABI: ReadonlyArray<string> = [
     "function name() view returns (string)",
     "function symbol() view returns (string)",
     "function decimals() view returns (uint8)",
@@ -72,7 +80,7 @@ export const ERC20ABI: ethersUtils.Fragment[] = [
     "function allowance(address owner, address spender) view returns (uint256)"
 ];
 
-export const UniswapV2PairABI: ethersUtils.Fragment[] = [
+export const UniswapV2PairABI: ReadonlyArray<string> = [
     "function name() external pure returns (string memory)",
     "function symbol() external pure returns (string memory)",
     "function decimals() external pure returns (uint8)",
@@ -105,7 +113,7 @@ export const UniswapV2PairABI: ethersUtils.Fragment[] = [
     "function sync() external"
 ];
 
-export const UniswapV2RouterABI: ethersUtils.Fragment[] = [
+export const UniswapV2RouterABI: ReadonlyArray<string> = [
     "constructor(address _factory, address _WETH)",
     "function WETH() view returns (address)",
     "function factory() view returns (address)",
@@ -134,11 +142,11 @@ export const UniswapV2RouterABI: ethersUtils.Fragment[] = [
 ];
 
 // Initialize a default ABI cache instance
+// The AbiCache's addAbi method will convert these string arrays to ethersUtils.Fragment[] by creating an Interface
 export const globalAbiCache = new AbiCache([
     { name: 'ERC20', abi: ERC20ABI },
     { name: 'UniswapV2Pair', abi: UniswapV2PairABI },
     { name: 'UniswapV2Router02', abi: UniswapV2RouterABI },
-    // Add SushiSwapRouter or other commonly used ABIs here if desired for preloading
 ]);
 
 // Example: To load SushiSwapRouter dynamically if not preloaded:

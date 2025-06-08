@@ -5,8 +5,8 @@ import pino from 'pino'; // Temporary logger for config service itself
 
 // Import shared interfaces
 import {
-    AppConfig,
-    NetworkRpcConfig,
+    AppConfig, // Imported, local definition will be removed
+    NetworkRpcConfig, // Imported, local definition will be removed
     DexRouterConfig,
     KnownDexPoolEntryConfig,
     InitialPortfolioAssetConfig,
@@ -20,6 +20,8 @@ const tempLogger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const envPath = path.resolve(process.cwd(), '.env');
 dotenv.config({ path: envPath });
 
+// Local interface definitions for NetworkRpcConfig and AppConfig REMOVED as they are now imported.
+
 export class ConfigService {
     // Use the imported AppConfig. All values are initially undefined or string from process.env
     private envVars: { [key: string]: string | undefined } = process.env;
@@ -30,7 +32,7 @@ export class ConfigService {
         tempLogger.info('ConfigService: Initial configuration loaded and parsed from environment variables.');
         // Optionally validate after loading
         if (!isValidAppConfig(this.config)) {
-            // isValidAppConfig should log specific errors
+            // isValidAppConfig should log specific errors from appConfig.interface.ts
             tempLogger.fatal("ConfigService: Initial configuration is invalid. Please check environment variables and .env file against appConfig.interface.ts requirements.");
             // Depending on severity, you might throw an error or exit
             // For now, we'll allow the app to continue starting so other services can report missing specific configs.
@@ -123,8 +125,6 @@ export class ConfigService {
                         tempLogger.info(`ConfigService: Secret '${secretName}' loaded and updated in config.`);
                     } else {
                         tempLogger.warn(`ConfigService: Secret '${secretName}' loaded from GCP, but it does not directly map to a key in AppConfig. It will be available via process.env.${secretName} if set by GCP environment, but prefer direct AppConfig mapping.`);
-                        // Optionally, set it to process.env if that's the fallback mechanism
-                        // process.env[secretName] = secretValue;
                     }
                 } else {
                     tempLogger.warn(`ConfigService: Secret ${secretName} has no payload data.`);
@@ -134,37 +134,25 @@ export class ConfigService {
             }
         }
         tempLogger.info('ConfigService: Finished attempting to load secrets from GCP Secret Manager.');
-        // Re-validate if critical configs were expected from secrets and might still be missing
         if (!isValidAppConfig(this.config)) {
              tempLogger.warn("ConfigService: Configuration may still be invalid after attempting to load secrets.");
         }
     }
 
-    /**
-     * Gets a configuration value. Values are typically strings as they come from environment variables.
-     * Consumers of this service are responsible for parsing into appropriate types (number, boolean, JSON)
-     * or use specific typed getters if provided.
-     */
     public get<K extends keyof AppConfig>(key: K): AppConfig[K] {
-        // This now directly returns the (potentially string) value from the parsed config.
-        // Type casting or parsing should be done by the consumer or in specific typed getters.
         return this.config[key];
     }
 
-    /**
-     * Gets a configuration value and throws an error if it's missing or empty.
-     */
     public getOrThrow<K extends keyof AppConfig>(key: K): NonNullable<AppConfig[K]> {
         const value = this.config[key];
         if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
             const errorMsg = `Configuration error: Missing or empty required config key '${key}'`;
-            tempLogger.fatal(errorMsg); // Use tempLogger as main logger might not be fully set up
+            tempLogger.fatal(errorMsg);
             throw new Error(errorMsg);
         }
         return value as NonNullable<AppConfig[K]>;
     }
 
-    // Example of a specific typed getter (consumers should prefer these)
     public getRpcUrlsForNetwork(networkName: string): NetworkRpcConfig | undefined {
         const httpKey = `RPC_URL_${networkName.toUpperCase()}_HTTP` as keyof AppConfig;
         const wssKey = `RPC_URL_${networkName.toUpperCase()}_WSS` as keyof AppConfig;
@@ -217,20 +205,7 @@ export class ConfigService {
         return {};
     }
 
-
     public isProduction(): boolean {
         return this.config.NODE_ENV === 'production';
     }
 }
-
-// Singleton export pattern:
-// const configServiceInstance = new ConfigService();
-// export default configServiceInstance;
-// To use this, ensure async operations like loadSecretsFromGcp are handled appropriately at app startup.
-// For example, in main.ts:
-// async function bootstrap() {
-//   await configServiceInstance.loadSecretsFromGcp();
-//   // ... rest of the app
-// }
-// bootstrap();
-// For now, exporting the class to be instantiated in main.ts which will handle async loading.
