@@ -25,6 +25,10 @@ export class DataCollectionService {
         logger.info(`DataCollectionService: Initialized. Project: ${firestoreProjectId || 'default'}, Main Collection: ${this.mainCollection}, Schema: ${this.schemaVersion}`);
     }
 
+    public getMainCollectionName(): string {
+        return this.mainCollection;
+    }
+
     /**
      * Logs data to a specified sub-collection or the main collection if no sub-collection is given.
      * A document ID can be provided, or Firestore will auto-generate one.

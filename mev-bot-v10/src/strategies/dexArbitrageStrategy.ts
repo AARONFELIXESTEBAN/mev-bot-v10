@@ -77,7 +77,7 @@ export class DexArbitrageStrategy {
             timestamp: simulation.timestamp,
         };
 
-        await this.firestoreService.saveData(this.paperTradeCollection, paperTrade.id, paperTrade);
+        await this.firestoreService.logData(paperTrade, this.paperTradeCollection, paperTrade.id);
         console.log(`Strategy: Paper trade executed for ${paperTrade.opportunityPathName}. Profit: ${ethers.utils.formatUnits(profitAmount, 18)}. New Balance (${startToken}): ${ethers.utils.formatUnits(this.virtualPortfolio[startToken], 18)}`);
         // Log current portfolio
         // console.log("Current Virtual Portfolio:", this.getPortfolioDisplay());
@@ -88,7 +88,9 @@ export class DexArbitrageStrategy {
     }
 
     async getAllPaperTrades(): Promise<PaperTrade[]> {
-        const trades = await this.firestoreService.queryData(this.paperTradeCollection, ref => ref.orderBy('timestamp', 'desc').limit(100));
+        const mainCollectionName = this.firestoreService.getMainCollectionName();
+        const fullCollectionPath = `${mainCollectionName}/${this.paperTradeCollection}`;
+        const trades = await this.firestoreService.queryCollection(fullCollectionPath, ref => ref.orderBy('timestamp', 'desc').limit(100));
         return trades as PaperTrade[];
     }
 }

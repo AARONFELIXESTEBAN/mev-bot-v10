@@ -100,8 +100,8 @@ export class SimulationService {
             logger.warn({ pathId: opportunity.id }, "SimulationService: Opportunity failed freshness check (too old).");
             return { ...resultTemplate, isProfitable: false, freshnessCheckFailed: true } as SimulationResult;
         }
-        if (opportunity.blockNumber && (currentBlockNumber - opportunity.blockNumber > this.maxBlockAgeForOpportunity)) {
-            logger.warn({ pathId: opportunity.id, currentBlock: currentBlockNumber, oppBlock: opportunity.blockNumber }, "SimulationService: Opportunity failed block age check.");
+        if (opportunity.sourceTxBlockNumber && (currentBlockNumber - opportunity.sourceTxBlockNumber > this.maxBlockAgeForOpportunity)) {
+            logger.warn({ pathId: opportunity.id, currentBlock: currentBlockNumber, oppBlock: opportunity.sourceTxBlockNumber }, "SimulationService: Opportunity failed block age check.");
             return { ...resultTemplate, isProfitable: false, blockAgeCheckFailed: true } as SimulationResult;
         }
 

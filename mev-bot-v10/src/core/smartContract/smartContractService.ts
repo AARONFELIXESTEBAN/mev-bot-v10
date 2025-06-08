@@ -154,6 +154,28 @@ export class SmartContractInteractionService {
         return result !== null && typeof result === 'number' ? result : null;
     }
 
+    public async getPairAddress(factoryAddress: string, tokenA: string, tokenB: string, network: string = 'mainnet'): Promise<string | null> {
+        try {
+            // Assuming a common UniswapV2Factory ABI is available or add it.
+            // For now, using a minimal ABI inline for getPair.
+            const factoryAbi = ['function getPair(address tokenA, address tokenB) external view returns (address pair)'];
+            const factoryContract = await this.getContract(factoryAddress, factoryAbi, network); // Added await
+            if (!factoryContract) {
+                logger.warn({ factoryAddress, tokenA, tokenB }, `Factory contract not found at ${factoryAddress}`);
+                return null;
+            }
+            const pairAddress = await factoryContract.getPair(tokenA, tokenB);
+            if (pairAddress && pairAddress !== ethers.constants.AddressZero) {
+                return pairAddress;
+            }
+            logger.warn({ factoryAddress, tokenA, tokenB, pairAddress }, "getPair returned zero address.");
+            return null;
+        } catch (error) {
+            logger.error({ err: error, factoryAddress, tokenA, tokenB }, `Error calling getPair on factory ${factoryAddress}.`);
+            return null;
+        }
+    }
+
     // Future: Write functions (would require a Signer)
     // public async writeFunction(params: ContractCallParams, signer: ethers.Signer): Promise<ethers.providers.TransactionResponse | null> { ... }
 }
