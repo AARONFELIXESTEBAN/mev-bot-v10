@@ -25,7 +25,6 @@
     "@google-cloud/firestore": "^7.0.0",
     "@google-cloud/secret-manager": "^5.0.0",
     "pino": "^8.17.2"
-    // Add other specific dependencies for price feeds (e.g., ccxt for CEX, or specific DEX SDKs if not just ethers)
   },
   "devDependencies": {
     "typescript": "^5.3.3",
