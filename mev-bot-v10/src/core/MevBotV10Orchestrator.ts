@@ -295,8 +295,7 @@ export class MevBotV10Orchestrator {
         // In a more robust app, clear the interval timer here.
 
         // Close any other persistent connections (e.g., RPC WebSocket providers if kept open)
-        this.rpcService.getWebSocketProvider('mainnet')?.terminate(); // Example for ethers v5 specific method
-        // this.rpcService.closeAllWebSockets(); // If such a method exists in RpcService
+        this.rpcService.closeAllWebSocketProviders();
 
         logger.info("MevBotV10Orchestrator: Stopped.");
     }
