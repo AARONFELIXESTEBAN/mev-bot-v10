@@ -6,6 +6,7 @@ import { getLogger } from '../logger/loggerService'; // Adjust path
 // For this structure, assuming `abis` folder is copied to `dist` or paths are resolved correctly.
 import UniswapV2PairABIJson from '../../abis/UniswapV2Pair.json';
 import ERC20ABIJson from '../../abis/ERC20.json';
+import UniswapV2Router02ABIJson from '../../abis/UniswapV2Router02.json';
 
 const logger = getLogger();
 
@@ -31,6 +32,7 @@ export class SmartContractInteractionService {
         // Pre-load/cache common ABIs
         this.loadAbi('UniswapV2Pair', UniswapV2PairABIJson);
         this.loadAbi('ERC20', ERC20ABIJson);
+        this.loadAbi('UniswapV2Router02', UniswapV2Router02ABIJson);
     }
 
     private loadAbi(name: string, abi: any): boolean {

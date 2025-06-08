@@ -1,11 +1,11 @@
 import { ethers, BigNumber } from 'ethers';
-import { ConfigService } from '../../core/config/configService';
-import { getLogger } from '../../core/logger/loggerService';
-import { RpcService } from '../../core/rpc/rpcService';
-import { SmartContractInteractionService } from '../../core/smartContract/smartContractService';
-import { PotentialOpportunity } from './opportunityService'; // Assuming this is where PotentialOpportunity is defined
-import { PriceService } from './priceService'; // For USD price conversion
-import UniswapV2Router02ABI from '../../abis/UniswapV2Router02.json'; // For getAmountsOut
+import { ConfigService } from '@core/config/configService';
+import { getLogger } from '@core/logger/loggerService';
+import { RpcService } from '@core/rpc/rpcService';
+import { SmartContractInteractionService } from '@core/smartContract/smartContractService';
+import { PotentialOpportunity } from '@services/opportunity/opportunityService';
+import { PriceService } from '@services/price/priceService';
+// Removed: import UniswapV2Router02ABI from '../../abis/UniswapV2Router02.json';
 
 const logger = getLogger();
 
@@ -77,7 +77,7 @@ export class SimulationService {
             return null;
         }
         // Assuming UniswapV2Router02ABI is compatible for typical 2-hop swaps on these DEXs
-        return this.scService.getContract(routerAddress, UniswapV2Router02ABI, network);
+        return this.scService.getContract(routerAddress, 'UniswapV2Router02', network);
     }
 
     public async simulateArbitragePath(
@@ -98,18 +98,48 @@ export class SimulationService {
         // 1. Opportunity Freshness (SSOT 8.3.B)
         if ((simTime - opportunity.discoveryTimestamp) > this.opportunityFreshnessLimitMs) {
             logger.warn({ pathId: opportunity.id }, "SimulationService: Opportunity failed freshness check (too old).");
-            return { ...resultTemplate, isProfitable: false, freshnessCheckFailed: true } as SimulationResult;
+            return {
+                ...resultTemplate,
+                isProfitable: false,
+                freshnessCheckFailed: true,
+                grossProfitBaseToken: BigNumber.from(0),
+                estimatedGasCostBaseToken: BigNumber.from(0),
+                netProfitBaseToken: BigNumber.from(0),
+                netProfitUsd: 0,
+                amountOutLeg1: BigNumber.from(0),
+                amountOutLeg2: BigNumber.from(0),
+            };
         }
         if (opportunity.sourceTxBlockNumber && (currentBlockNumber - opportunity.sourceTxBlockNumber > this.maxBlockAgeForOpportunity)) {
             logger.warn({ pathId: opportunity.id, currentBlock: currentBlockNumber, oppBlock: opportunity.sourceTxBlockNumber }, "SimulationService: Opportunity failed block age check.");
-            return { ...resultTemplate, isProfitable: false, blockAgeCheckFailed: true } as SimulationResult;
+            return {
+                ...resultTemplate,
+                isProfitable: false,
+                blockAgeCheckFailed: true,
+                grossProfitBaseToken: BigNumber.from(0),
+                estimatedGasCostBaseToken: BigNumber.from(0),
+                netProfitBaseToken: BigNumber.from(0),
+                netProfitUsd: 0,
+                amountOutLeg1: BigNumber.from(0),
+                amountOutLeg2: BigNumber.from(0),
+            };
         }
 
         const router1 = await this.getRouterContract(opportunity.leg1.dexName, network);
         const router2 = await this.getRouterContract(opportunity.leg2.dexName, network);
 
         if (!router1 || !router2) {
-            return { ...resultTemplate, isProfitable: false, error: "Router contract(s) not found." } as SimulationResult;
+            return {
+                ...resultTemplate,
+                isProfitable: false,
+                error: "Router contract(s) not found.",
+                grossProfitBaseToken: BigNumber.from(0),
+                estimatedGasCostBaseToken: BigNumber.from(0),
+                netProfitBaseToken: BigNumber.from(0),
+                netProfitUsd: 0,
+                amountOutLeg1: BigNumber.from(0),
+                amountOutLeg2: BigNumber.from(0),
+            };
         }
 
         let amountOutLeg1: BigNumber;
@@ -128,14 +158,34 @@ export class SimulationService {
 
         } catch (e: any) {
             logger.warn({ pathId: opportunity.id, err: e.message }, "SimulationService: Error during getAmountsOut simulation.");
-            return { ...resultTemplate, isProfitable: false, error: `getAmountsOut failed: ${e.message}` } as SimulationResult;
+            return {
+                ...resultTemplate,
+                isProfitable: false,
+                error: `getAmountsOut failed: ${e.message}`,
+                grossProfitBaseToken: BigNumber.from(0),
+                estimatedGasCostBaseToken: BigNumber.from(0),
+                netProfitBaseToken: BigNumber.from(0),
+                netProfitUsd: 0,
+                amountOutLeg1: BigNumber.from(0), // Or potentially the value of this.defaultSwapAmountBaseToken if leg1 succeeded
+                amountOutLeg2: BigNumber.from(0),
+            };
         }
 
         // Gas Cost Estimation
         const feeData = await this.rpcService.makeRpcCall(network, 'http', p => p.getFeeData());
         if (!feeData?.gasPrice) { // Using gasPrice for simplicity, could use EIP-1559 fields
             logger.warn({ pathId: opportunity.id }, "SimulationService: Could not retrieve gas price for cost estimation.");
-            return { ...resultTemplate, isProfitable: false, error: "Failed to get gas price." } as SimulationResult;
+            return {
+                ...resultTemplate,
+                isProfitable: false,
+                error: "Failed to get gas price.",
+                grossProfitBaseToken: BigNumber.from(0), // Assuming profit calculation can't proceed
+                estimatedGasCostBaseToken: BigNumber.from(0),
+                netProfitBaseToken: BigNumber.from(0),
+                netProfitUsd: 0,
+                amountOutLeg1: amountOutLeg1 || BigNumber.from(0), // Use calculated if available
+                amountOutLeg2: BigNumber.from(0),
+            };
         }
         const gasPrice = feeData.gasPrice;
         const estimatedGasCostLeg1 = gasPrice.mul(this.defaultSwapGasUnits);

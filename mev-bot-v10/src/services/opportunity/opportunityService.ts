@@ -1,9 +1,9 @@
-import { ConfigService } from '../../core/config/configService';
-import { getLogger } from '../../core/logger/loggerService';
-import { PriceService, DexPairPriceInfo } from './priceService'; // Adjust path
-import { findTwoHopOpportunities, DecodedMempoolSwap, ArbitragePath, DexPoolInfo } from '../../arbitrage/pathFinder'; // Adjust path
-import { TokenInfo } from '../../utils/typeUtils'; // Add this line
-import { SmartContractInteractionService } from '../../core/smartContract/smartContractService';
+import { ConfigService } from '@core/config/configService'; // Updated path
+import { getLogger } from '@core/logger/loggerService'; // Updated path
+import { PriceService, DexPairPriceInfo } from '@services/price/priceService'; // Updated path
+import { findTwoHopOpportunities, DecodedMempoolSwap, ArbitragePath, DexPoolInfo } from '@arbitrage/pathFinder'; // Updated path
+import { TokenInfo } from '@utils/typeUtils'; // Updated path
+import { SmartContractInteractionService } from '@core/smartContract/smartContractService'; // Updated path
 import { ethers } from 'ethers';
 
 const logger = getLogger();
@@ -59,7 +59,7 @@ export class OpportunityIdentificationService {
     private async initializeWhitelistedTokensAndPools(): Promise<void> {
         // Load whitelisted token addresses (CSV)
         const whitelistedAddressesCsv = this.configService.get('opportunity_service.core_whitelisted_tokens_csv') || "";
-        const addresses = whitelistedAddressesCsv.split(',').map(a => a.trim()).filter(a => ethers.utils.isAddress(a));
+        const addresses = whitelistedAddressesCsv.split(',').map((a: string) => a.trim()).filter((a: string) => ethers.utils.isAddress(a));
 
         logger.info(`Attempting to load info for whitelisted token addresses: ${addresses.join(', ')}`);
 
