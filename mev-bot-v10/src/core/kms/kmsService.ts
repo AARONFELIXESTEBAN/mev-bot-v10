@@ -1,5 +1,5 @@
 import { KeyManagementServiceClient, protos } from '@google-cloud/kms';
-import { ethers, utils as ethersUtils, providers, BigNumber, Signature, SignatureLike } from 'ethers';
+import { ethers, utils as ethersUtils, providers, BigNumber, Signature } from 'ethers'; // Removed SignatureLike from root
 import { ConfigService } from '../config/configService'; // Adjust path
 import { getLogger } from '../logger/loggerService'; // Adjust path
 // elliptic is a good library for EC operations, including signature parsing and public key recovery
@@ -151,7 +151,7 @@ export class KmsService {
             }
 
             // ethers.Signature object
-            const ethersSignature: SignatureLike = {
+            const ethersSignature: ethersUtils.SignatureLike = { // Changed to ethersUtils.SignatureLike
                 r: r.toHexString(),
                 s: s.toHexString(),
                 recoveryParam: recoveryParam,
@@ -194,43 +194,41 @@ export class KmsService {
                 return null;
             }
         }
-        // if (typeof transactionRequest.nonce !== 'number') {
-        //      logger.error("KmsService: Transaction nonce (as a number) is required for signing.");
-        //      return null;
-        // }
 
-        // Create a new object for serialization to avoid mutating the input
-        const txToSerialize: providers.TransactionRequest = { ...transactionRequest };
-
-        // Normalize nonce to number if it exists
-        if (txToSerialize.nonce !== undefined) {
+        let numericNonce: number;
+        if (transactionRequest.nonce !== undefined) {
             try {
-                txToSerialize.nonce = ethers.BigNumber.from(txToSerialize.nonce).toNumber();
+                numericNonce = ethers.BigNumber.from(transactionRequest.nonce).toNumber();
             } catch (e) {
-                logger.error({ err: e, originalNonce: txToSerialize.nonce }, "KmsService: Invalid nonce value, cannot convert to number.");
-                return null; // Or throw, depending on desired error handling
+                logger.error({ err: e, originalNonce: transactionRequest.nonce }, "KmsService: Invalid nonce value, cannot convert to number.");
+                return null;
             }
         } else {
-            // Nonce is undefined. This might be an issue if a nonce is strictly required by the network/signer.
-            // ethers.utils.serializeTransaction might handle undefined nonce by omitting it,
-            // but it's often required. The original check implied it's required.
-            // For now, we'll let serializeTransaction handle it if undefined.
-            // If a nonce is absolutely required, this is where an error should be thrown.
-            // The original code had a check: `if (typeof transactionRequest.nonce !== 'number')`,
-            // which implies a nonce IS required and must be a number.
-            // Reinstating a stricter check after attempting conversion:
             logger.error("KmsService: Transaction nonce is required for signing.");
             return null;
         }
 
-        // Ensure nonce is a number after conversion for the stricter check
-        if (typeof txToSerialize.nonce !== 'number') {
-             logger.error({ finalNonce: txToSerialize.nonce }, "KmsService: Transaction nonce could not be normalized to a number and is required.");
-             return null;
-        }
+        const transactionFieldsForSigning: ethersUtils.UnsignedTransaction = {
+            to: transactionRequest.to,
+            nonce: numericNonce,
+            gasLimit: transactionRequest.gasLimit,
+            gasPrice: transactionRequest.gasPrice,
+            data: transactionRequest.data,
+            value: transactionRequest.value,
+            chainId: transactionRequest.chainId,
+            type: transactionRequest.type,
+            maxPriorityFeePerGas: transactionRequest.maxPriorityFeePerGas,
+            maxFeePerGas: transactionRequest.maxFeePerGas,
+        };
 
-        // Now use txToSerialize for both calls to serializeTransaction
-        const unsignedTx = ethersUtils.serializeTransaction(txToSerialize); // Does not include signature
+        Object.keys(transactionFieldsForSigning).forEach(keyStr => {
+            const key = keyStr as keyof ethersUtils.UnsignedTransaction;
+            if (transactionFieldsForSigning[key] === undefined) {
+                delete transactionFieldsForSigning[key];
+            }
+        });
+
+        const unsignedTx = ethersUtils.serializeTransaction(transactionFieldsForSigning);
         const txDigest = ethersUtils.keccak256(unsignedTx);
 
         const signature = await this.signTransactionDigest(txDigest);
@@ -240,9 +238,6 @@ export class KmsService {
             return null;
         }
 
-        // Add the signature to the transaction and serialize it again
-        // Note: serializeTransaction expects the original transaction object for the second parameter if signature is separate.
-        // It's safer to pass the txToSerialize (with normalized nonce) and the signature.
-        return ethersUtils.serializeTransaction(txToSerialize, signature);
+        return ethersUtils.serializeTransaction(transactionFieldsForSigning, signature);
     }
 }
