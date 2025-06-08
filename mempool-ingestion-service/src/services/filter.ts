@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import config from '../utils/config';
 import logger from '../utils/logger';
-import { DecodedTransactionInput } from './transactionDecoder'; // Optional: if filtering on decoded data
+import { DecodedTransactionInput } from '@shared/types'; // Changed from './transactionDecoder'
 
 export interface FilterableTransaction extends ethers.providers.TransactionResponse {
     decodedInput?: DecodedTransactionInput & { routerName: string }; // Optional decoded data
@@ -68,3 +68,4 @@ export const defaultFilterService = {
     isTransactionToKnownRouter: FilterService.isTransactionToKnownRouter,
     passesComplexFilter: FilterService.passesComplexFilter,
 };
+```

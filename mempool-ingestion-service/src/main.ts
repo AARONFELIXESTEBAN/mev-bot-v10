@@ -2,7 +2,8 @@ import config from './utils/config';
 import logger from './utils/logger';
 import { WebsocketConnector } from './services/websocketConnector';
 import { TransactionFetcher } from './services/transactionFetcher';
-import { TransactionDecoder, initializeDefaultDecoder, DecodedTransactionInput } from './services/transactionDecoder';
+import { TransactionDecoder, initializeDefaultDecoder } from './services/transactionDecoder';
+import { DecodedTransactionInput } from '@shared/types'; // Added this line
 import { FilterService, FilterableTransaction } from './services/filter';
 import { PublisherService } from './services/publisher';
 import { ethers } from 'ethers'; // Import ethers for TransactionResponse type

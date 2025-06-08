@@ -1,38 +1,42 @@
 // Placeholder for DEX Arbitrage Strategy Logic (including Paper Trading Module)
-import { SimulationResult } from '../services/simulation/simulationService'; // Adjust path
-import { FirestoreService } from '../core/dataCollection/firestoreService'; // Adjust path
+import { SimulationResult } from '@services/simulation/simulationService'; // Updated path
+import { DataCollectionService as FirestoreService } from '@core/dataCollection/firestoreService'; // Updated import and aliased
+import { getLogger, pino } from '@core/logger/loggerService'; // Added logger import
 import { ethers } from 'ethers';
 
 export interface PaperTrade {
-    id: string; // e.g., simulation hash or unique trade ID
-    opportunityPathName: string;
-    simulatedNetProfit: string; // In tokenStart units (e.g., WETH)
-    amountInStartToken: string;
-    simulatedAmountOutEndToken: string;
-    totalGasCostEstimate: string;
-    timestamp: number;
-    // Add any other details from SimulationResult.opportunity if needed
+    id: string;
+    opportunityPathName: string; // from simulation.opportunity.pathName
+    simulatedNetProfitBaseToken: string; // Store formatted string from simulation.netProfitBaseToken
+    netProfitUsd: number; // from simulation.netProfitUsd
+    amountInStartToken: string; // Store formatted string from simulation.opportunity.estimatedAmountInStartToken or simulation.amountInLeg1
+    simulatedAmountOutEndToken: string; // Store formatted string from simulation.amountOutLeg2
+    totalGasCostEstimateBaseToken: string; // Store formatted string from simulation.estimatedGasCostBaseToken
+    simulationTimestamp: number; // from simulation.simulationTimestamp
+    pathId: string; // from simulation.pathId
 }
 
 export class DexArbitrageStrategy {
-    private firestoreService: FirestoreService;
+    private logger: pino.Logger; // Added logger property
+    private firestoreService: FirestoreService; // Type remains FirestoreService due to alias
     private paperTradeCollection: string;
     // Virtual portfolio - simple version for MVP
     private virtualPortfolio: { [tokenAddress: string]: ethers.BigNumber };
     private initialPortfolio: { [tokenAddress: string]: string }; // Initial amounts as strings
 
     constructor(
-        firestoreService: FirestoreService,
+        firestoreService: FirestoreService, // Parameter type remains FirestoreService due to alias
         paperTradeCollection: string = 'paper_trades_dex_arb',
         initialPortfolio: { [tokenAddress: string]: string } = { "WETH_ADDRESS_PLACEHOLDER": "10000000000000000000" } // Default 10 WETH
     ) {
+        this.logger = getLogger().child({ module: 'DexArbitrageStrategy' });
         this.firestoreService = firestoreService;
         this.paperTradeCollection = paperTradeCollection;
         this.initialPortfolio = initialPortfolio;
         this.virtualPortfolio = {};
         this.resetVirtualPortfolio();
-        console.log("DEX Arbitrage Strategy (Paper Trading Module) Initialized.");
-        console.log("Initial Virtual Portfolio:", this.getPortfolioDisplay());
+        this.logger.info("DEX Arbitrage Strategy (Paper Trading Module) Initialized.");
+        this.logger.info({ initialPortfolio: this.getPortfolioDisplay() }, "Initial Virtual Portfolio");
     }
 
     resetVirtualPortfolio() {
@@ -52,35 +56,44 @@ export class DexArbitrageStrategy {
 
     async executePaperTrade(simulation: SimulationResult): Promise<void> {
         if (!simulation.isProfitable) {
-            console.log(`Strategy: Skipping non-profitable simulation for ${simulation.opportunity.pathName}.`);
+            this.logger.info({ pathName: simulation.opportunity.pathName, pathId: simulation.pathId }, "Strategy: Skipping non-profitable simulation.");
             return;
         }
 
-        // For MVP, assume tokenStart and tokenEnd of the opportunity are the same (e.g., WETH)
-        // and netProfit is already in terms of this token.
-        const profitAmount = ethers.BigNumber.from(simulation.netProfit);
-        const startToken = simulation.opportunity.tokenStart; // Address of WETH or other base asset
+        const profitAmount = simulation.netProfitBaseToken; // Already a BigNumber
+        const startTokenAddress = simulation.opportunity.tokenPath[0].address; // Address of WETH or other base asset
 
-        if (!this.virtualPortfolio[startToken]) {
-            this.virtualPortfolio[startToken] = ethers.BigNumber.from(0);
+        if (!this.virtualPortfolio[startTokenAddress]) {
+            this.virtualPortfolio[startTokenAddress] = ethers.BigNumber.from(0);
         }
-        this.virtualPortfolio[startToken] = this.virtualPortfolio[startToken].add(profitAmount);
+        this.virtualPortfolio[startTokenAddress] = this.virtualPortfolio[startTokenAddress].add(profitAmount);
 
-        const tradeId = `${simulation.opportunity.pathName}-${simulation.timestamp}-${simulation.opportunity.estimatedAmountInStartToken.slice(-6)}`;
+        const baseTokenDecimals = simulation.opportunity.tokenPath[0].decimals;
+        const endTokenDecimals = simulation.opportunity.tokenPath[2].decimals; // Assuming tokenPath[2] is the end token of the hop
+
+        const tradeId = `${simulation.opportunity.pathName}-${simulation.simulationTimestamp}-${ethers.utils.formatUnits(simulation.amountInLeg1, baseTokenDecimals).slice(-6)}`;
         const paperTrade: PaperTrade = {
             id: tradeId,
             opportunityPathName: simulation.opportunity.pathName,
-            simulatedNetProfit: simulation.netProfit,
-            amountInStartToken: simulation.opportunity.estimatedAmountInStartToken,
-            simulatedAmountOutEndToken: simulation.simulatedAmountOutLeg2,
-            totalGasCostEstimate: simulation.totalGasCostEstimate,
-            timestamp: simulation.timestamp,
+            simulatedNetProfitBaseToken: ethers.utils.formatUnits(simulation.netProfitBaseToken, baseTokenDecimals),
+            netProfitUsd: simulation.netProfitUsd,
+            amountInStartToken: ethers.utils.formatUnits(simulation.amountInLeg1, baseTokenDecimals),
+            simulatedAmountOutEndToken: ethers.utils.formatUnits(simulation.amountOutLeg2, endTokenDecimals),
+            totalGasCostEstimateBaseToken: ethers.utils.formatUnits(simulation.estimatedGasCostBaseToken, baseTokenDecimals),
+            simulationTimestamp: simulation.simulationTimestamp,
+            pathId: simulation.pathId,
         };
 
         await this.firestoreService.logData(paperTrade, this.paperTradeCollection, paperTrade.id);
-        console.log(`Strategy: Paper trade executed for ${paperTrade.opportunityPathName}. Profit: ${ethers.utils.formatUnits(profitAmount, 18)}. New Balance (${startToken}): ${ethers.utils.formatUnits(this.virtualPortfolio[startToken], 18)}`);
-        // Log current portfolio
-        // console.log("Current Virtual Portfolio:", this.getPortfolioDisplay());
+        this.logger.info({
+            tradeId: paperTrade.id,
+            pathId: paperTrade.pathId,
+            pathName: paperTrade.opportunityPathName,
+            profitBaseToken: paperTrade.simulatedNetProfitBaseToken,
+            netProfitUsd: paperTrade.netProfitUsd,
+            startToken: startTokenAddress, // Log address for clarity
+            newBalance: ethers.utils.formatUnits(this.virtualPortfolio[startTokenAddress], baseTokenDecimals)
+        }, "Strategy: Paper trade executed.");
     }
 
     async getPortfolioSnapshot(): Promise<{ [tokenAddress: string]: string }> {
@@ -90,7 +103,10 @@ export class DexArbitrageStrategy {
     async getAllPaperTrades(): Promise<PaperTrade[]> {
         const mainCollectionName = this.firestoreService.getMainCollectionName();
         const fullCollectionPath = `${mainCollectionName}/${this.paperTradeCollection}`;
-        const trades = await this.firestoreService.queryCollection(fullCollectionPath, ref => ref.orderBy('timestamp', 'desc').limit(100));
+        const trades = await this.firestoreService.queryCollection(
+            fullCollectionPath,
+            (ref: any) => ref.orderBy('simulationTimestamp', 'desc').limit(100)
+        );
         return trades as PaperTrade[];
     }
 }

@@ -8,8 +8,15 @@
     // "rootDir": "./src", // Removed
     "rootDirs": ["./src", "./shared"], // Added
     "baseUrl": "./", // Added
-    "paths": {       // Added
-      "@shared/*": ["shared/*"]
+    "paths": {
+      "@shared/*": ["shared/*"],
+      "@core/*": ["src/core/*"],
+      "@services/*": ["src/services/*"],
+      "@utils/*": ["src/utils/*"],
+      "@arbitrage/*": ["src/arbitrage/*"],
+      "@strategies/*": ["src/strategies/*"],
+      "@interfaces/*": ["src/interfaces/*"],
+      "@abis/*": ["src/abis/*"]
     },
     "strict": true,
     "esModuleInterop": true,
