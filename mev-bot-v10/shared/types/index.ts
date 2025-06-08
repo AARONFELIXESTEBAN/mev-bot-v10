@@ -1,21 +1,16 @@
-// In shared/types/index.ts
-
-// +++ FIX: Added this import statement for ethers types.
 import { ethers, utils as ethersUtils, providers } from 'ethers';
 
 export interface DecodedTransactionInput {
     functionName: string;
     signature: string;
     args: ethersUtils.Result;
-    // Common parameters for swaps
-    path?: string[]; // Array of token addresses
-    amountOutMin?: ethers.BigNumber; // For swapExactETHForTokens, swapExactTokensForTokens
-    amountIn?: ethers.BigNumber; // For swapExactTokensForETH, swapExactTokensForTokens
-    amountOut?: ethers.BigNumber; // For swapETHForExactTokens, swapTokensForExactTokens
-    amountInMax?: ethers.BigNumber; // For swapETHForExactTokens, swapTokensForExactTokens
-    to?: string; // Recipient address
+    path?: string[];
+    amountOutMin?: ethers.BigNumber;
+    amountIn?: ethers.BigNumber;
+    amountOut?: ethers.BigNumber;
+    amountInMax?: ethers.BigNumber;
+    to?: string;
     deadline?: ethers.BigNumber;
-    // Common parameters for liquidity
     tokenA?: string;
     tokenB?: string;
     amountADesired?: ethers.BigNumber;
