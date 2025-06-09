@@ -19,16 +19,18 @@
     "strictPropertyInitialization": false,
     "esModuleInterop": true,
     "resolveJsonModule": true,
+    "skipLibCheck": true, // Added this line
     "outDir": "dist",
     "baseUrl": ".", // Changed from "./src" to "." (project root)
     "paths": {
-      "@core/*": ["src/core/*"],       // Paths are now relative to project root
+      "@core/*": ["src/core/*"],
       "@services/*": ["src/services/*"],
       "@arbitrage/*": ["src/arbitrage/*"],
       "@utils/*": ["src/utils/*"],
-      "@shared/*": ["shared/*"],       // Path to shared is now direct from project root
-      "@interfaces/*": ["src/interfaces/*"], // Added for consistency from previous plan
-      "@abis/*": ["src/abis/*"]             // Added for consistency from previous plan
+      "@shared/*": ["shared/*"],
+      "@interfaces/*": ["src/interfaces/*"],
+      "@abis/*": ["src/abis/*"],
+      "ethers": ["./node_modules/ethers"] // Added explicit path for ethers
     }
   },
   "include": ["src/**/*.ts", "shared/**/*.ts"],

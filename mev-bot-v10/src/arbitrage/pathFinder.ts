@@ -122,7 +122,7 @@ export function findTwoHopOpportunities(
             }
         }
     }
-    
+
     return opportunities;
 }
 
@@ -135,6 +135,6 @@ function findTokenInfo(address: string, symbolHint: string, knownTokens: TokenIn
     if (token) {
         return { ...token, address: address };
     }
-    
+
     return undefined;
 }
