@@ -1,5 +1,4 @@
 import pino from 'pino';
-
 // Define and export the PinoLogger type alias
 export type PinoLogger = pino.Logger;
 
@@ -23,7 +22,9 @@ export function initializeLogger(config?: LoggerConfig): PinoLogger {
     const loggerOptions: pino.LoggerOptions = {
         level: effectiveConfig.logLevel,
         formatters: {
-            level: (label) => ({ level: label }),
+            level: (label) => {
+                return { level: label };
+            },
         },
     };
 
@@ -51,4 +52,3 @@ export function getLogger(): PinoLogger {
     }
     return loggerInstance;
 }
-```

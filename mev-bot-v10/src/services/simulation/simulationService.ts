@@ -1,255 +1,281 @@
-import { ethers, BigNumber, Overrides } from 'ethers'; // Added Overrides
+import { ethers } from 'ethers';
+import { getLogger, PinoLogger } from '@core/logger/loggerService';
 import { ConfigService } from '@core/config/configService';
-import { getLogger, PinoLogger } from '@core/logger/loggerService'; // Adjusted logger import
-import { RpcService } from '@core/rpc/rpcService';
-import { SmartContractInteractionService } from '@core/smartContract/smartContractService';
-import { PotentialOpportunity, PathSegment } from '@services/opportunity/opportunityService'; // Added PathSegment
-import { PriceService } from '@services/price/priceService';
-import { GasParams } from '../execution/gasStrategy'; // Import GasParams
+import { KmsService } from '@core/kms/kmsService';
+import { FlashbotsBundleProvider, FlashbotsBundleRawTransaction } from '@flashbots/ethers-provider-bundle';
+import { PotentialOpportunity, PathSegment, SimulationResult, SimulatedPathSegmentDetails } from '@shared/types';
+import { GasParams } from '@services/execution/gasStrategy';
 
-const logger: PinoLogger = getLogger(); // Explicitly type logger
-
-export interface SimulatedPathSegmentDetails {
-    segment: PathSegment; // The original segment from PotentialOpportunity
-    expectedOutputAmount: BigNumber; // Output amount from this segment's simulation
-    estimatedGasUnits: number; // Gas units for this specific swap
-    // Potentially add routerAddress used, actual input amount for this leg if different from opp.entryAmountBase
+interface RpcService {
+  getProvider(network: string, type: 'http' | 'ws'): ethers.JsonRpcProvider;
 }
 
-export interface SimulationResult {
-    opportunity: PotentialOpportunity;
-    pathId: string;
-    isProfitable: boolean;
-    grossProfitBaseToken: BigNumber;
-    estimatedGasCostBaseToken: BigNumber;
-    netProfitBaseToken: BigNumber;
-    netProfitUsd: number;
-    amountInLeg1: BigNumber; // Initial amount input to the first leg
-    // amountOutLeg1 and amountOutLeg2 can be inferred from pathSegmentSimulations[-1].expectedOutputAmount
-    // but keeping them for now for direct access to final overall outputs.
-    amountOutLeg1: BigNumber; // Final output of leg 1
-    amountOutLeg2: BigNumber; // Final output of leg 2 (if 2-hop)
-    pathSegmentSimulations: SimulatedPathSegmentDetails[]; // Detailed results for each leg
-    gasParamsUsed?: GasParams; // Gas parameters used for this simulation run
-    profitRealismCheckFailed?: boolean;
-    maxProfitUsdCheckFailed?: boolean;
-    freshnessCheckFailed?: boolean;
-    blockAgeCheckFailed?: boolean;
-    simulationTimestamp: number;
-    error?: string;
+interface DataCollectionService {
+  logData(data: any, collection: string, id: string): Promise<void>;
 }
 
 export class SimulationService {
-    private defaultSwapAmountBaseToken: BigNumber; // Initial amount for the *first* leg if not specified in opportunity
-    private profitRealismMaxPercentage: number;
-    private maxProfitUsd: number;
-    private opportunityFreshnessLimitMs: number;
-    private maxBlockAgeForOpportunity: number;
-    private defaultSwapGasUnits: number; // Gas units for a single Uniswap V2 style swap
+  private logger: PinoLogger;
+  private configService: ConfigService;
+  private rpcService: RpcService;
+  private kmsService: KmsService;
+  private dataCollectionService: DataCollectionService;
+  private flashbotsProvider: FlashbotsBundleProvider | null = null;
 
-    constructor(
-        private configService: ConfigService,
-        private rpcService: RpcService,
-        private scService: SmartContractInteractionService,
-        private priceService: PriceService // For USD conversion of profit
-    ) {
-        this.defaultSwapAmountBaseToken = ethers.utils.parseUnits(
-            this.configService.get('simulation_service.default_swap_amount_base_token') || '0.1', // e.g., 0.1 WETH
-            this.configService.get('opportunity_service.base_token_decimals') || 18
+  constructor(
+    configService: ConfigService,
+    rpcService: RpcService,
+    kmsService: KmsService,
+    dataCollectionService: DataCollectionService
+  ) {
+    this.logger = getLogger('SimulationService');
+    this.configService = configService;
+    this.rpcService = rpcService;
+    this.kmsService = kmsService;
+    this.dataCollectionService = dataCollectionService;
+  }
+
+  public async init(): Promise<void> {
+    this.logger.info('Initializing SimulationService...');
+    try {
+      const flashbotsRelayUrl = this.configService.get('execution_config.flashbots_relay_url') as string;
+      const flashbotsSigningKey = this.configService.get('execution_config.flashbots_signing_key') as string;
+
+      if (flashbotsRelayUrl && flashbotsSigningKey) {
+        const provider = this.rpcService.getProvider('mainnet', 'http');
+        const authSigner = new ethers.Wallet(flashbotsSigningKey);
+        this.flashbotsProvider = await FlashbotsBundleProvider.create(
+          provider,
+          authSigner,
+          flashbotsRelayUrl,
+          'mainnet'
         );
-        this.profitRealismMaxPercentage = parseFloat(this.configService.get('simulation_service.profit_realism_max_percentage') || '50.0'); // 50%
-        this.maxProfitUsd = parseFloat(this.configService.get('simulation_service.max_profit_usd_v10') || '5000.0'); // $5000
-        this.opportunityFreshnessLimitMs = parseInt(this.configService.get('simulation_service.opportunity_freshness_limit_ms') || '15000', 10); // 15 seconds
-        this.maxBlockAgeForOpportunity = parseInt(this.configService.get('simulation_service.max_block_age_for_opportunity') || '3', 10); // 3 blocks
-        this.defaultSwapGasUnits = parseInt(this.configService.get('simulation_service.default_swap_gas_units') || '200000', 10);
-
-        logger.info('SimulationService: Initialized with parameters:');
-        logger.info(`  Default Swap Amount (Base Token): ${ethers.utils.formatUnits(this.defaultSwapAmountBaseToken, this.configService.get('opportunity_service.base_token_decimals') || 18)}`);
-        logger.info(`  Profit Realism Max Percentage: ${this.profitRealismMaxPercentage}%`);
-        logger.info(`  Max Profit USD V10: $${this.maxProfitUsd}`);
-        logger.info(`  Opportunity Freshness Limit MS: ${this.opportunityFreshnessLimitMs}ms`);
-        logger.info(`  Max Block Age for Opportunity: ${this.maxBlockAgeForOpportunity} blocks`);
-        logger.info(`  Default Swap Gas Units: ${this.defaultSwapGasUnits}`);
+        this.logger.info(`FlashbotsBundleProvider initialized for simulation.`);
+      } else {
+        this.logger.info('Flashbots not configured for simulation. Using public provider.');
+      }
+    } catch (error: any) {
+      this.logger.error({ err: error.message }, 'Failed to initialize SimulationService.');
+      throw error;
     }
+  }
 
-    private async getRouterContract(dexName: string, network: string = 'mainnet'): Promise<ethers.Contract | null> {
-        // This should come from a more robust DEX registry in ConfigService or a dedicated DexRegistryService
-        // Using a new config path for router addresses: 'opportunity_service.dex_routers'
-        const routers = this.configService.get('opportunity_service.dex_routers') as { [name: string]: string } || {};
+  public async simulateArbitrage(opportunity: PotentialOpportunity): Promise<SimulationResult> {
+    this.logger.info({ opportunityId: opportunity.id }, 'Simulating arbitrage opportunity...');
+    try {
+      const provider = this.rpcService.getProvider('mainnet', 'http');
+      const botAddress = await this.kmsService.getBotAddress();
+      const simulatedPathDetails: SimulatedPathSegmentDetails[] = [];
+      let currentAmount = opportunity.entryAmountBase;
+      let totalGasCostWei = 0n;
+      let totalExpectedProfit = 0n;
 
-        let routerAddress = routers[dexName];
-        if (!routerAddress) { // Fallback to check some common ones if not explicitly mapped by name
-            if (dexName.toLowerCase().includes("uniswapv2")) routerAddress = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
-            else if (dexName.toLowerCase().includes("sushiswap")) routerAddress = "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F";
-        }
-
+      for (const segment of opportunity.path) {
+        const routerAddress = this.configService.get(`opportunity_service.dex_routers.${segment.dexName}`) as string;
         if (!routerAddress) {
-            logger.error(`SimulationService: Router address for DEX "${dexName}" not found in configuration.`);
-            return null;
+          throw new Error(`Router address for ${segment.dexName} not found.`);
         }
-        // Assuming UniswapV2Router02ABI is compatible for typical 2-hop swaps on these DEXs
-        return this.scService.getContract(routerAddress, 'UniswapV2Router02', network);
+
+        const routerContract = new ethers.Contract(
+          routerAddress,
+          this.getRouterAbi(segment.dexName),
+          provider
+        );
+
+        let callData: string;
+        const isNativeEthIn = segment.tokenInAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+        if (isNativeEthIn) {
+          callData = routerContract.interface.encodeFunctionData('swapExactETHForTokens', [
+            segment.amountOutMin,
+            [segment.tokenInAddress, segment.tokenOutAddress],
+            botAddress,
+            Math.floor(Date.now() / 1000) + 120,
+          ]);
+        } else {
+          callData = routerContract.interface.encodeFunctionData('swapExactTokensForTokens', [
+            currentAmount,
+            segment.amountOutMin,
+            [segment.tokenInAddress, segment.tokenOutAddress],
+            botAddress,
+            Math.floor(Date.now() / 1000) + 120,
+          ]);
+        }
+
+        const gasEstimate = await provider.estimateGas({
+          to: routerAddress,
+          data: callData,
+          value: isNativeEthIn ? currentAmount : 0,
+          from: botAddress,
+        });
+
+        const feeData = await provider.getFeeData();
+        const gasCostWei = BigInt(gasEstimate) * (BigInt(feeData.maxFeePerGas || 1000000000n)); // Fallback to 1 Gwei
+        totalGasCostWei += gasCostWei;
+
+        const simulatedAmountOut = await routerContract.getAmountsOut(currentAmount, [segment.tokenInAddress, segment.tokenOutAddress]);
+        currentAmount = simulatedAmountOut[1];
+
+        simulatedPathDetails.push({
+          segment,
+          expectedAmountOut: currentAmount,
+          estimatedGasUnits: gasEstimate,
+        });
+      }
+
+      const netProfitBaseToken = BigInt(currentAmount) - BigInt(opportunity.entryAmountBase) - totalGasCostWei;
+      const isProfitable = netProfitBaseToken > 0n;
+      const netProfitUsd = Number(netProfitBaseToken) / 1e18 * 2000; // Assume 1 ETH = $2000
+
+      const result: SimulationResult = {
+        success: true,
+        isProfitable,
+        opportunity,
+        simulatedPathDetails,
+        totalExpectedProfitBase: netProfitBaseToken,
+        totalEstimatedGasCostWei: totalGasCostWei,
+        netProfitBaseToken,
+        netProfitUsd,
+        amountInLeg1: opportunity.entryAmountBase,
+        amountOutLeg2: currentAmount,
+        estimatedGasCostBaseToken: totalGasCostWei,
+        simulationTimestamp: Date.now(),
+        pathId: ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(opportunity.path))),
+      };
+
+      await this.dataCollectionService.logData(result, 'simulations', result.opportunity.id);
+      this.logger.info({ opportunityId: opportunity.id, isProfitable }, 'Simulation completed.');
+      return result;
+    } catch (error: any) {
+      this.logger.error({ err: error.message, opportunityId: opportunity.id }, 'Simulation failed.');
+      return {
+        success: false,
+        isProfitable: false,
+        opportunity,
+        simulatedPathDetails: [],
+        totalExpectedProfitBase: 0n,
+        totalEstimatedGasCostWei: 0n,
+        netProfitBaseToken: 0n,
+        netProfitUsd: 0,
+        amountInLeg1: 0n,
+        amountOutLeg2: 0n,
+        estimatedGasCostBaseToken: 0n,
+        simulationTimestamp: Date.now(),
+        pathId: '',
+      };
+    }
+  }
+
+  private async simulateWithFlashbots(
+    opportunity: PotentialOpportunity,
+    simulatedPathDetails: SimulatedPathSegmentDetails[],
+    gasParams: GasParams
+  ): Promise<SimulationResult> {
+    if (!this.flashbotsProvider) {
+      this.logger.error('Flashbots provider not initialized.');
+      return this.simulateArbitrage(opportunity);
     }
 
-    public async simulateArbitragePath(
-        opportunity: PotentialOpportunity,
-        currentBlockNumber: number,
-        network: string = 'mainnet',
-        gasParamsOverride?: GasParams // Allow overriding gas params for pre-flight sim
-    ): Promise<SimulationResult> {
-        const simTime = Date.now();
-        // Assuming opportunity.entryTokenAddress is the base token (e.g. WETH)
-        // and its decimals are known or can be fetched via opportunity.path[0].tokenInDecimals
-        const baseTokenDecimals = opportunity.path[0].tokenInDecimals;
-        const amountInForLeg1 = opportunity.entryAmountBase || this.defaultSwapAmountBaseToken;
+    try {
+      const provider = this.rpcService.getProvider('mainnet', 'http');
+      const botAddress = await this.kmsService.getBotAddress();
+      const currentBlock = await provider.getBlockNumber();
+      const targetBlock = currentBlock + 1;
 
-        // Initialize structure for path segment simulation details
-        const pathSegmentSimulations: SimulatedPathSegmentDetails[] = [];
+      const txs: FlashbotsBundleRawTransaction[] = [];
+      let currentAmount = opportunity.entryAmountBase;
 
-        // --- Pre-checks ---
-        if ((simTime - opportunity.discoveryTimestamp) > this.opportunityFreshnessLimitMs) {
-            logger.warn({ pathId: opportunity.id }, "SimulationService: Opportunity failed freshness check (too old).");
-            return {
-                opportunity, pathId: opportunity.id, simulationTimestamp: simTime,
-                isProfitable: false, freshnessCheckFailed: true,
-                grossProfitBaseToken: BigNumber.from(0), estimatedGasCostBaseToken: BigNumber.from(0),
-                netProfitBaseToken: BigNumber.from(0), netProfitUsd: 0,
-                amountInLeg1: amountInForLeg1,
-                pathSegmentSimulations: [], amountOutLeg1: BigNumber.from(0), amountOutLeg2: BigNumber.from(0),
-            };
-        }
-        if (opportunity.sourceTxHash && opportunity.discoveryTimestamp && // Assuming sourceTxBlockNumber might not always be present
-            (currentBlockNumber - (opportunity.sourceTxBlockNumber || currentBlockNumber) > this.maxBlockAgeForOpportunity) ) {
-            logger.warn({ pathId: opportunity.id, currentBlock: currentBlockNumber, oppBlock: opportunity.sourceTxBlockNumber }, "SimulationService: Opportunity failed block age check.");
-            return {
-                opportunity, pathId: opportunity.id, simulationTimestamp: simTime,
-                isProfitable: false, blockAgeCheckFailed: true,
-                grossProfitBaseToken: BigNumber.from(0), estimatedGasCostBaseToken: BigNumber.from(0),
-                netProfitBaseToken: BigNumber.from(0), netProfitUsd: 0,
-                amountInLeg1: amountInForLeg1,
-                pathSegmentSimulations: [], amountOutLeg1: BigNumber.from(0), amountOutLeg2: BigNumber.from(0),
-            };
-        }
-        // --- End Pre-checks ---
+      for (const simDetail of simulatedPathDetails) {
+        const segment = simDetail.segment;
+        const routerAddress = this.configService.get(`opportunity_service.dex_routers.${segment.dexName}`) as string;
+        if (!routerAddress) throw new Error(`Router address for ${segment.dexName} not found.`);
 
-        let currentLegAmountIn = amountInForLeg1;
-        let overallFinalAmountOut = BigNumber.from(0); // This will be the final amount of baseToken after all legs
+        const routerInterface = new ethers.Interface(this.getRouterAbi(segment.dexName));
+        let txData: string;
+        const isNativeEthIn = segment.tokenInAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
-        for (let i = 0; i < opportunity.path.length; i++) {
-            const segment = opportunity.path[i];
-            const router = await this.getRouterContract(segment.dexName, network);
-            if (!router) {
-                return {
-                    opportunity, pathId: opportunity.id, simulationTimestamp: simTime, isProfitable: false,
-                    error: `Router contract for DEX ${segment.dexName} not found.`,
-                    grossProfitBaseToken: BigNumber.from(0), estimatedGasCostBaseToken: BigNumber.from(0),
-                    netProfitBaseToken: BigNumber.from(0), netProfitUsd: 0,
-                    amountInLeg1: amountInForLeg1, pathSegmentSimulations,
-                    amountOutLeg1: pathSegmentSimulations[0]?.expectedOutputAmount || BigNumber.from(0),
-                    amountOutLeg2: pathSegmentSimulations[1]?.expectedOutputAmount || BigNumber.from(0),
-                };
-            }
-
-            try {
-                const amountsOut = await router.getAmountsOut(currentLegAmountIn, [segment.tokenInAddress, segment.tokenOutAddress]);
-                const legOutputAmount = amountsOut[1];
-
-                pathSegmentSimulations.push({
-                    segment,
-                    expectedOutputAmount: legOutputAmount,
-                    estimatedGasUnits: this.defaultSwapGasUnits, // For now, same for all legs
-                });
-                currentLegAmountIn = legOutputAmount; // Output of this leg is input to next
-                if (i === opportunity.path.length - 1) {
-                    overallFinalAmountOut = legOutputAmount; // Final output of the entire path
-                }
-            } catch (e: any) {
-                logger.warn({ pathId: opportunity.id, leg: i + 1, dex: segment.dexName, err: e.message }, "SimulationService: Error during getAmountsOut for a leg.");
-                return {
-                    opportunity, pathId: opportunity.id, simulationTimestamp: simTime, isProfitable: false,
-                    error: `getAmountsOut failed for leg ${i + 1} on ${segment.dexName}: ${e.message}`,
-                    grossProfitBaseToken: BigNumber.from(0), estimatedGasCostBaseToken: BigNumber.from(0),
-                    netProfitBaseToken: BigNumber.from(0), netProfitUsd: 0,
-                    amountInLeg1: amountInForLeg1, pathSegmentSimulations,
-                    amountOutLeg1: pathSegmentSimulations[0]?.expectedOutputAmount || BigNumber.from(0),
-                    amountOutLeg2: pathSegmentSimulations[1]?.expectedOutputAmount || BigNumber.from(0),
-                };
-            }
-        }
-
-        logger.debug({ pathId: opportunity.id, legOutputs: pathSegmentSimulations.map(p => p.expectedOutputAmount.toString()) }, "Simulation successful for all legs.");
-
-        // Gas Cost Estimation
-        let gasPriceToUse: BigNumber;
-        if (gasParamsOverride) {
-            gasPriceToUse = gasParamsOverride.maxFeePerGas; // Use the effective gas price for cost estimation
+        if (isNativeEthIn) {
+          txData = routerInterface.encodeFunctionData('swapExactETHForTokens', [
+            simDetail.expectedAmountOut,
+            [segment.tokenInAddress, segment.tokenOutAddress],
+            botAddress,
+            Math.floor(Date.now() / 1000) + 120,
+          ]);
         } else {
-            // const feeData = await this.rpcService.makeRpcCall(network, 'http', p => p.getFeeData()); // Old way
-            const feeData = await this.rpcService.getFeeData(network); // New way
-            if (!feeData || !feeData.gasPrice) { // Using gasPrice for simplicity if no override (legacy for non-EIP1559)
-                                                 // For EIP-1559, lastBaseFeePerGas + maxPriorityFeePerGas would be more accurate if not using gasParamsOverride
-                logger.warn({ pathId: opportunity.id }, "SimulationService: Could not retrieve gasPrice from feeData for cost estimation. Using zero cost.");
-                // Return error or zero cost based on strictness
-                return {
-                    opportunity, pathId: opportunity.id, simulationTimestamp: simTime, isProfitable: false,
-                    error: "Failed to get gas price for estimation.",
-                    grossProfitBaseToken: BigNumber.from(0), estimatedGasCostBaseToken: BigNumber.from(0),
-                    netProfitBaseToken: BigNumber.from(0), netProfitUsd: 0,
-                    amountInLeg1: amountInForLeg1, pathSegmentSimulations,
-                    amountOutLeg1: pathSegmentSimulations[0]?.expectedOutputAmount || BigNumber.from(0),
-                    amountOutLeg2: pathSegmentSimulations[1]?.expectedOutputAmount || BigNumber.from(0),
-                    gasParamsUsed: gasParamsOverride,
-                };
-            }
-            gasPriceToUse = feeData.gasPrice;
+          txData = routerInterface.encodeFunctionData('swapExactTokensForTokens', [
+            currentAmount,
+            simDetail.expectedAmountOut,
+            [segment.tokenInAddress, segment.tokenOutAddress],
+            botAddress,
+            Math.floor(Date.now() / 1000) + 120,
+          ]);
         }
 
-        const totalGasUnits = pathSegmentSimulations.reduce((sum, leg) => sum + leg.estimatedGasUnits, 0);
-        const totalGasCostBaseToken = gasPriceToUse.mul(totalGasUnits);
-
-        // Profit Calculation
-        const grossProfitBaseToken = overallFinalAmountOut.sub(amountInForLeg1);
-        const netProfitBaseToken = grossProfitBaseToken.sub(totalGasCostBaseToken);
-        const baseTokenUsdPrice = await this.priceService.getUsdPrice(opportunity.path[0].tokenInSymbol);
-        const netProfitUsd = parseFloat(ethers.utils.formatUnits(netProfitBaseToken, baseTokenDecimals)) * baseTokenUsdPrice;
-
-        // Profit Realism Checks
-        const profitPercentage = amountInForLeg1.isZero() ? BigNumber.from(0) : grossProfitBaseToken.mul(10000).div(amountInForLeg1);
-        const profitPercentageNum = profitPercentage.toNumber() / 100;
-        let profitRealismCheckFailed = false;
-        if (profitPercentageNum > this.profitRealismMaxPercentage) {
-            logger.warn({ pathId: opportunity.id, profitPercentage: profitPercentageNum, max: this.profitRealismMaxPercentage }, "SimulationService: Potential profit failed realism check (too high %).");
-            profitRealismCheckFailed = true;
-        }
-
-        let maxProfitUsdCheckFailed = false;
-        if (netProfitUsd > this.maxProfitUsd) {
-            logger.warn({ pathId: opportunity.id, netProfitUsd, max: this.maxProfitUsd }, "SimulationService: Potential profit failed USD limit check (too high USD).");
-            maxProfitUsdCheckFailed = true;
-        }
-
-        const minNetProfitWei = BigNumber.from(this.configService.get('simulation_service.min_net_profit_base_token_wei') || "0");
-        const isProfitable = netProfitBaseToken.gt(minNetProfitWei);
-
-        const result: SimulationResult = {
-            opportunity, pathId: opportunity.id,
-            isProfitable: isProfitable && !profitRealismCheckFailed && !maxProfitUsdCheckFailed,
-            grossProfitBaseToken, estimatedGasCostBaseToken: totalGasCostBaseToken,
-            netProfitBaseToken, netProfitUsd,
-            amountInLeg1: amountInForLeg1,
-            amountOutLeg1: pathSegmentSimulations[0]?.expectedOutputAmount || BigNumber.from(0), // Output of leg 1
-            amountOutLeg2: (pathSegmentSimulations.length > 1 ? pathSegmentSimulations[1]?.expectedOutputAmount : BigNumber.from(0)) || BigNumber.from(0), // Output of leg 2
-            pathSegmentSimulations,
-            gasParamsUsed: gasParamsOverride,
-            profitRealismCheckFailed, maxProfitUsdCheckFailed,
-            simulationTimestamp: simTime,
+        const tx: ethers.TransactionRequest = {
+          to: routerAddress,
+          data: txData,
+          value: isNativeEthIn ? currentAmount : 0,
+          gasLimit: simDetail.estimatedGasUnits,
+          maxFeePerGas: gasParams.maxFeePerGas,
+          maxPriorityFeePerGas: gasParams.maxPriorityFeePerGas,
+          nonce: await provider.getTransactionCount(botAddress, 'pending'),
+          chainId: (await provider.getNetwork()).chainId,
+          type: 2,
         };
 
-        if (result.isProfitable) {
-            logger.info({ pathId: opportunity.id, netProfitBase: ethers.utils.formatUnits(netProfitBaseToken, baseTokenDecimals), netProfitUsd: netProfitUsd.toFixed(2) }, "SimulationService: Profitable opportunity found and passed checks.");
-        } else {
-            logger.info({ pathId: opportunity.id, netProfitBase: ethers.utils.formatUnits(netProfitBaseToken, baseTokenDecimals), isProfitable: result.isProfitable, profitRealismCheckFailed, maxProfitUsdCheckFailed }, "SimulationService: Opportunity not profitable or failed checks.");
-        }
-        return result;
+        const signedTx = await this.kmsService.signTransaction(tx);
+        txs.push({ signedTransaction: signedTx });
+        currentAmount = simDetail.expectedAmountOut;
+      }
+
+      const bundleSubmission = await this.flashbotsProvider.simulate(txs.map(tx => tx.signedTransaction), targetBlock);
+      if ('error' in bundleSubmission) {
+        this.logger.error({ err: bundleSubmission.error }, 'Flashbots simulation failed.');
+        return this.simulateArbitrage(opportunity);
+      }
+
+      const totalGasCostWei = bundleSubmission.results.reduce(
+        (sum, result) => sum + BigInt(result.gasUsed) * BigInt(gasParams.maxFeePerGas || 0),
+        0n
+      );
+      const netProfitBaseToken = BigInt(currentAmount) - BigInt(opportunity.entryAmountBase) - totalGasCostWei;
+      const isProfitable = netProfitBaseToken > 0n;
+      const netProfitUsd = Number(netProfitBaseToken) / 1e18 * 2000;
+
+      const result: SimulationResult = {
+        success: true,
+        isProfitable,
+        opportunity,
+        simulatedPathDetails,
+        totalExpectedProfitBase: netProfitBaseToken,
+        totalEstimatedGasCostWei: totalGasCostWei,
+        netProfitBaseToken,
+        netProfitUsd,
+        amountInLeg1: opportunity.entryAmountBase,
+        amountOutLeg2: currentAmount,
+        estimatedGasCostBaseToken: totalGasCostWei,
+        simulationTimestamp: Date.now(),
+        pathId: ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(opportunity.path))),
+      };
+
+      await this.dataCollectionService.logData(result, 'simulations_flashbots', result.opportunity.id);
+      this.logger.info({ opportunityId: opportunity.id, isProfitable }, 'Flashbots simulation completed.');
+      return result;
+    } catch (error: any) {
+      this.logger.error({ err: error.message, opportunityId: opportunity.id }, 'Flashbots simulation failed.');
+      return this.simulateArbitrage(opportunity);
     }
+  }
+
+  private getRouterAbi(dexName: string): any {
+    const uniswapV2RouterABI = [
+      'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)',
+      'function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) external payable returns (uint[] memory amounts)',
+      'function getAmountsOut(uint amountIn, address[] path) view returns (uint[] memory amounts)',
+    ];
+    if (dexName.toLowerCase().includes('uniswap') || dexName.toLowerCase().includes('sushi')) {
+      return uniswapV2RouterABI;
+    }
+    this.logger.error(`No ABI found for DEX: ${dexName}. Using default UniswapV2Router ABI.`);
+    return uniswapV2RouterABI;
+  }
 }
