@@ -91,8 +91,10 @@ export class SimulationService {
         if ((simTime - opportunity.discoveryTimestamp) > this.opportunityFreshnessLimitMs) {
             logger.warn({ pathId: opportunity.id }, "SimulationService: Opportunity failed freshness check (too old).");
             return {
-                opportunity,
+                opportunity: opportunity, // Explicitly ensure 'opportunity' is included
                 pathId: opportunity.id,
+                simulationTimestamp: simTime,
+                amountInLeg1: this.defaultSwapAmountBaseToken,
                 isProfitable: false,
                 freshnessCheckFailed: true,
                 grossProfitBaseToken: BigNumber.from(0),
@@ -108,8 +110,10 @@ export class SimulationService {
         if (opportunity.sourceTxBlockNumber && (currentBlockNumber - opportunity.sourceTxBlockNumber > this.maxBlockAgeForOpportunity)) {
             logger.warn({ pathId: opportunity.id, currentBlock: currentBlockNumber, oppBlock: opportunity.sourceTxBlockNumber }, "SimulationService: Opportunity failed block age check.");
             return {
-                opportunity,
+                opportunity: opportunity, // Explicitly ensure 'opportunity' is included
                 pathId: opportunity.id,
+                simulationTimestamp: simTime,
+                amountInLeg1: this.defaultSwapAmountBaseToken,
                 isProfitable: false,
                 blockAgeCheckFailed: true,
                 grossProfitBaseToken: BigNumber.from(0),
@@ -128,8 +132,10 @@ export class SimulationService {
 
         if (!router1 || !router2) {
             return {
-                opportunity,
+                opportunity: opportunity, // Explicitly ensure 'opportunity' is included
                 pathId: opportunity.id,
+                simulationTimestamp: simTime,
+                amountInLeg1: this.defaultSwapAmountBaseToken,
                 isProfitable: false,
                 error: "Router contract(s) not found.",
                 grossProfitBaseToken: BigNumber.from(0),
@@ -160,8 +166,10 @@ export class SimulationService {
         } catch (e: any) {
             logger.warn({ pathId: opportunity.id, err: e.message }, "SimulationService: Error during getAmountsOut simulation.");
             return {
-                opportunity,
+                opportunity: opportunity, // Explicitly ensure 'opportunity' is included
                 pathId: opportunity.id,
+                simulationTimestamp: simTime,
+                amountInLeg1: this.defaultSwapAmountBaseToken,
                 isProfitable: false,
                 error: `getAmountsOut failed: ${e.message}`,
                 grossProfitBaseToken: BigNumber.from(0),
@@ -180,8 +188,10 @@ export class SimulationService {
         if (!feeData?.gasPrice) { // Using gasPrice for simplicity, could use EIP-1559 fields
             logger.warn({ pathId: opportunity.id }, "SimulationService: Could not retrieve gas price for cost estimation.");
             return {
-                opportunity,
+                opportunity: opportunity, // Explicitly ensure 'opportunity' is included
                 pathId: opportunity.id,
+                simulationTimestamp: simTime,
+                amountInLeg1: this.defaultSwapAmountBaseToken,
                 isProfitable: false,
                 error: "Failed to get gas price.",
                 grossProfitBaseToken: BigNumber.from(0),
