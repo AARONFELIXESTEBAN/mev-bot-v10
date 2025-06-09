@@ -1,5 +1,4 @@
 import { ethers, utils as ethersUtils, providers } from 'ethers';
-
 export interface DecodedTransactionInput {
     functionName: string;
     signature: string;
@@ -19,7 +18,8 @@ export interface DecodedTransactionInput {
     amountBMin?: ethers.BigNumber;
     liquidity?: ethers.BigNumber;
 }
-
 export interface FilterableTransaction extends providers.TransactionResponse {
-    decodedInput?: DecodedTransactionInput & { routerName: string };
+    decodedInput?: DecodedTransactionInput & {
+        routerName: string;
+    };
 }

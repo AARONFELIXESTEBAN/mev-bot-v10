@@ -1,0 +1,92 @@
+[
+  {
+    "name": "Approval",
+    "inputs": [
+      { "name": "owner", "type": "address", "indexed": true },
+      { "name": "spender", "type": "address", "indexed": true },
+      { "name": "value", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false,
+    "type": "event"
+  },
+  {
+    "name": "Transfer",
+    "inputs": [
+      { "name": "from", "type": "address", "indexed": true },
+      { "name": "to", "type": "address", "indexed": true },
+      { "name": "value", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false,
+    "type": "event"
+  },
+  {
+    "name": "allowance",
+    "outputs": [{ "name": "", "type": "uint256" }],
+    "inputs": [
+      { "name": "owner", "type": "address" },
+      { "name": "spender", "type": "address" }
+    ],
+    "constant": true,
+    "payable": false,
+    "type": "function",
+    "gas": 1939
+  },
+  {
+    "name": "approve",
+    "outputs": [{ "name": "", "type": "bool" }],
+    "inputs": [
+      { "name": "spender", "type": "address" },
+      { "name": "value", "type": "uint256" }
+    ],
+    "constant": false,
+    "payable": false,
+    "type": "function",
+    "gas": 38989
+  },
+  {
+    "name": "balanceOf",
+    "outputs": [{ "name": "", "type": "uint256" }],
+    "inputs": [{ "name": "owner", "type": "address" }],
+    "constant": true,
+    "payable": false,
+    "type": "function",
+    "gas": 1789
+  },
+  {
+    "name": "getReserves",
+    "outputs": [
+      { "name": "_reserve0", "type": "uint112" },
+      { "name": "_reserve1", "type": "uint112" },
+      { "name": "_blockTimestampLast", "type": "uint32" }
+    ],
+    "inputs": [],
+    "constant": true,
+    "payable": false,
+    "type": "function"
+  },
+  {
+    "name": "token0",
+    "outputs": [{ "name": "", "type": "address" }],
+    "inputs": [],
+    "constant": true,
+    "payable": false,
+    "type": "function"
+  },
+  {
+    "name": "token1",
+    "outputs": [{ "name": "", "type": "address" }],
+    "inputs": [],
+    "constant": true,
+    "payable": false,
+    "type": "function"
+  },
+  {
+    "name": "totalSupply",
+    "outputs": [{ "name": "", "type": "uint256" }],
+    "inputs": [],
+    "constant": true,
+    "payable": false,
+    "type": "function",
+    "gas": 1549
+  }
+]

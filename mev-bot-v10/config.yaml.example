@@ -1,0 +1,105 @@
+# MEV Bot V10 - Example Main Configuration (config.yaml.example)
+# This file provides default values. Create config.yaml or set environment variables to override.
+
+# Global settings
+node_env: "development" # "production" or "development"
+log_level: "info" # "debug", "info", "warn", "error"
+gcp_project_id: "your-gcp-project-id" # Optional, may be inferred if running on GCP
+
+# RPC Endpoints for different networks
+# Environment variables like RPC_URL_MAINNET_HTTP will override these.
+rpc_urls:
+  mainnet:
+    httpUrl: "https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID_HTTP"
+    wssUrl: "wss://mainnet.infura.io/ws/v3/YOUR_INFURA_PROJECT_ID_WSS"
+  sepolia:
+    httpUrl: "https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID_HTTP"
+    wssUrl: "wss://sepolia.infura.io/ws/v3/YOUR_INFURA_PROJECT_ID_WSS"
+
+# Google Cloud KMS configuration
+kms_config:
+  operational_wallet_key_path: "projects/your-gcp-project-id/locations/global/keyRings/your-keyring/cryptoKeys/your-key/cryptoKeyVersions/1"
+
+# Google Cloud Firestore configuration
+firestore_config:
+  project_id: "your-gcp-project-id" # Optional, can be same as gcp_project_id
+  main_collection_v10: "mevBotV10Data" # Used by DataCollectionService
+
+# Data Collection specific settings
+data_collection:
+  log_discarded_opportunities: true # Log discarded opportunities to Firestore
+
+# Mempool Ingestion Service configuration
+mempool_ingestion:
+  publisher_url: "ws://localhost:3001" # URL of the mempool ingestion service publisher
+  max_reconnect_attempts: 10
+  reconnect_interval_ms: 5000
+
+# Opportunity Identification Service Configuration
+opportunity_service:
+  base_token_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" # WETH on Mainnet
+  base_token_symbol: "WETH"
+  base_token_decimals: 18
+  core_whitelisted_tokens_csv: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,0x6B175474E89094C44Da98b954EedeAC495271d0F" # Example: USDC,DAI (comma-separated addresses)
+  
+  known_dex_pools_config:
+    - pairAddress: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc" # USDC/WETH UniV2
+      dexName: "UniswapV2Router02" 
+      token0Symbol: "USDC" 
+      token1Symbol: "WETH"
+    - pairAddress: "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852" # WETH/WBTC UniV2
+      dexName: "UniswapV2Router02"
+      token0Symbol: "WETH"
+      token1Symbol: "WBTC" 
+    - pairAddress: "0x06da0fd433C1A5d7a4faa01111c044910A1848BC" # USDC/WETH SushiSwap
+      dexName: "SushiSwapRouter"
+      token0Symbol: "USDC"
+      token1Symbol: "WETH"
+      
+  dex_factories:
+    UniswapV2Router02: "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f" # Uniswap V2 Factory
+    SushiSwapRouter: "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac"   # SushiSwap Factory
+
+  dex_routers:
+    UniswapV2Router02: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
+    SushiSwapRouter: "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F"
+
+# Price Service Configuration
+price_service:
+  weth_usd_price_estimate: 2000.0 # Placeholder USD price for WETH
+
+# Simulation Service Configuration
+simulation_service:
+  default_swap_amount_base_token: "0.1" 
+  profit_realism_max_percentage: 50.0   
+  max_profit_usd_v10: 5000.0            
+  min_profit_threshold_usd: 1.0 # Minimum USD profit to consider executing
+  opportunity_freshness_limit_ms: 15000 
+  max_block_age_for_opportunity: 3      
+  default_swap_gas_units: 200000        
+  min_net_profit_base_token_wei: "1000000000000000" 
+
+# Paper Trading Module / Strategy Configuration
+paper_trading_config:
+  enabled: true # Enable or disable paper trading
+  firestore_collection_paper_trades: "paper_trades_v10_dex_arb" 
+  initial_portfolio:
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "10000000000000000000" 
+
+# Live Execution Configuration
+execution_config:
+  enabled: false # Enable or disable live trade execution
+
+# Orchestrator Settings
+orchestrator:
+  block_update_interval_ms: 12000 # How often to fetch the current block number
+
+# Secrets to load from GCP Secret Manager in production
+secrets_to_load:
+  - "RPC_URL_MAINNET_HTTP"    
+  - "RPC_URL_MAINNET_WSS"
+  - "KMS_KEY_PATH"
+  - "UNISWAPV2_ROUTER_ADDRESS" 
+  - "SUSHISWAP_ROUTER_ADDRESS"
+  - "WETH_USD_PRICE_ESTIMATE"
+```
