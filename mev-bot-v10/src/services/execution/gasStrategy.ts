@@ -1,8 +1,8 @@
 import { getLogger, PinoLogger } from '../../core/logger/loggerService';
 import { ConfigService } from '../../core/config/configService';
-import { RpcService } from '../../core/rpc/rpcService'; // To get current base fee, priority fee estimates
-import { PotentialOpportunity } from '../opportunity/opportunityService'; // If opportunity value influences gas
-import { EspPredictionResult } from '../esp/espService'; // If ESP score influences gas
+import { RpcService } from '../../core/rpc/rpcService';
+import { PotentialOpportunity } from '../opportunity/opportunityService';
+import { EspPredictionResult } from '../esp/espService';
 import { ethers } from 'ethers';
 
 export interface GasParams {
@@ -16,7 +16,7 @@ export class DynamicGasStrategyModule {
     private rpcService: RpcService;
 
     private basePriorityFeeWei_V10: ethers.BigNumber;
-    private maxGasPriceWei_V10: ethers.BigNumber; // Absolute ceiling for maxFeePerGas
+    private maxGasPriceWei_V10: ethers.BigNumber;
 
     constructor(configService: ConfigService, rpcService: RpcService) {
         this.logger = getLogger('DynamicGasStrategyModule');
@@ -24,20 +24,20 @@ export class DynamicGasStrategyModule {
         this.rpcService = rpcService;
 
         this.basePriorityFeeWei_V10 = ethers.utils.parseUnits(
-            (this.configService.get('execution_config.base_priority_fee_gwei_v10') as string || '1'), // Default 1 Gwei
+            (this.configService.get('execution_config.base_priority_fee_gwei_v10') as string || '1'),
             'gwei'
         );
         this.maxGasPriceWei_V10 = ethers.utils.parseUnits(
-            (this.configService.get('execution_config.max_gas_price_gwei_v10') as string || '250'), // Default 250 Gwei
+            (this.configService.get('execution_config.max_gas_price_gwei_v10') as string || '250'),
             'gwei'
         );
         this.logger.info(`Initialized with basePriorityFee: ${ethers.utils.formatUnits(this.basePriorityFeeWei_V10, 'gwei')} Gwei, maxGasPrice: ${ethers.utils.formatUnits(this.maxGasPriceWei_V10, 'gwei')} Gwei`);
     }
 
     public async getOptimalGas(
-        network: string = 'mainnet', // Network context for RPC calls
-        opportunity?: PotentialOpportunity, // Optional: For opportunity value based bidding
-        espResult?: EspPredictionResult     // Optional: For ESP confidence based bidding
+        network: string = 'mainnet',
+        opportunity?: PotentialOpportunity,
+        espResult?: EspPredictionResult
     ): Promise<GasParams> {
         this.logger.debug("Calculating optimal gas parameters...");
 
@@ -48,7 +48,7 @@ export class DynamicGasStrategyModule {
             const feeData = await this.rpcService.getFeeData(network);
             if (!feeData || !feeData.lastBaseFeePerGas || !feeData.maxPriorityFeePerGas) {
                 this.logger.warn("Could not retrieve full fee data from RPC. Using default priority fee and estimated base fee if possible.");
-                currentBaseFee = feeData?.lastBaseFeePerGas || ethers.utils.parseUnits(this.configService.get('price_service.default_base_fee_gwei') as string || '15', 'gwei'); // Fallback base fee
+                currentBaseFee = feeData?.lastBaseFeePerGas || ethers.utils.parseUnits(this.configService.get('price_service.default_base_fee_gwei') as string || '15', 'gwei');
                 suggestedPriorityFee = this.basePriorityFeeWei_V10;
             } else {
                 currentBaseFee = feeData.lastBaseFeePerGas;
@@ -57,7 +57,7 @@ export class DynamicGasStrategyModule {
             }
         } catch (error) {
             this.logger.error({ err: error }, "Error fetching fee data from RPC. Using default priority and estimated base fee.");
-            currentBaseFee = ethers.utils.parseUnits(this.configService.get('price_service.default_base_fee_gwei') as string || '15', 'gwei'); // Fallback base fee
+            currentBaseFee = ethers.utils.parseUnits(this.configService.get('price_service.default_base_fee_gwei') as string || '15', 'gwei');
             suggestedPriorityFee = this.basePriorityFeeWei_V10;
         }
 
@@ -73,8 +73,6 @@ export class DynamicGasStrategyModule {
             }
         }
 
-        // Calculate maxFeePerGas: typically 1.5x to 2x currentBaseFee + maxPriorityFeePerGas
-        // Using 2x as a common strategy for quick inclusion.
         let calculatedMaxFee = currentBaseFee.mul(2).add(calculatedPriorityFee);
 
         if (calculatedMaxFee.gt(this.maxGasPriceWei_V10)) {
@@ -82,9 +80,8 @@ export class DynamicGasStrategyModule {
             calculatedMaxFee = this.maxGasPriceWei_V10;
 
             if (calculatedPriorityFee.gt(calculatedMaxFee.sub(currentBaseFee))) {
-                // Ensure priority fee is not so high that tx becomes non-executable with current base fee
                 calculatedPriorityFee = calculatedMaxFee.sub(currentBaseFee);
-                if(calculatedPriorityFee.lt(0)) { // Should only happen if maxGasPrice < currentBaseFee
+                if(calculatedPriorityFee.lt(0)) {
                      this.logger.warn(`maxGasPriceWei_V10 (${ethers.utils.formatUnits(this.maxGasPriceWei_V10, 'gwei')}) is less than currentBaseFee (${ethers.utils.formatUnits(currentBaseFee, 'gwei')}). Setting priority fee to 0.`);
                      calculatedPriorityFee = ethers.BigNumber.from(0);
                 }
@@ -92,7 +89,6 @@ export class DynamicGasStrategyModule {
         }
 
         if (calculatedPriorityFee.gt(calculatedMaxFee)) {
-            // This should ideally not happen if logic above is correct, but as a safeguard:
             this.logger.warn(`Adjusting maxPriorityFeePerGas (${ethers.utils.formatUnits(calculatedPriorityFee, 'gwei')}) as it was greater than maxFeePerGas (${ethers.utils.formatUnits(calculatedMaxFee, 'gwei')}). Setting to maxFeePerGas.`);
             calculatedPriorityFee = calculatedMaxFee;
         }

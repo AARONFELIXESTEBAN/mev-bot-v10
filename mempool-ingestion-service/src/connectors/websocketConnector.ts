@@ -51,20 +51,20 @@ class WebsocketConnector extends EventEmitter {
         });
 
         // Handle internal errors from the WebSocket connection itself
-        this.provider.websocket.onerror = (error: Event) => {
-            logger.error('WebSocket internal error:', error);
-            this.emit('error', error);
-            // this.handleReconnect(); // Decide if all errors should trigger reconnect
+        // Using 'as any' to bypass strict type checking for WebSocketLike temporarily for diagnostics
+        (this.provider.websocket as any).onerror = (event: Event) => {
+            logger.error({ err: (event as any).error || event }, 'WebSocket internal error:');
+            this.emit('error', (event as any).error || event);
         };
 
-        // Handle errors from the ethers.js WebSocketProvider
+        // Handle errors from the ethers.js WebSocketProvider itself
         this.provider.on('error', (error: any) => {
-            logger.error('WebSocketProvider error:', error);
+            logger.error('WebSocketProvider (ethers) error:', error);
             this.emit('error', error);
-            // It's common for 'error' to be followed by 'close', so reconnect might be handled there
         });
 
-        this.provider.websocket.onclose = (event: CloseEvent) => {
+        // Handle the close event from the WebSocket connection
+        (this.provider.websocket as any).onclose = (event: CloseEvent) => {
             logger.info(`WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}, Clean: ${event.wasClean}`);
             this.emit('disconnected', event.code, event.reason);
             if (!this.explicitlyClosed) {

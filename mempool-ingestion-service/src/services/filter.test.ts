@@ -40,9 +40,11 @@ describe('FilterService', () => {
             value: BigNumber.from(0),
             chainId: 1,
             confirmations: 0,
-            blockHash: null,
-            blockNumber: null,
-            timestamp: null,
+            // blockHash, blockNumber, timestamp can be undefined for pending transactions
+            // Set to undefined to match ethers.providers.TransactionResponse more closely where these are optional numbers/strings
+            blockHash: undefined,
+            blockNumber: undefined,
+            timestamp: undefined,
             wait: jest.fn() as jest.MockedFunction<ethers.providers.TransactionResponse['wait']>,
         } as FilterableTransaction;
     };

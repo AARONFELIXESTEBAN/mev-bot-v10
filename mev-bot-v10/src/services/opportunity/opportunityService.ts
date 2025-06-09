@@ -2,6 +2,8 @@ import { ConfigService } from '@core/config/configService';
 import { getLogger } from '@core/logger/loggerService';
 import { PriceService } from '@services/price/priceService';
 import { TokenInfo, PathSegment } from '@utils/typeUtils';
+// Re-export PathSegment to make it available to importers of this module
+export { PathSegment } from '@utils/typeUtils';
 import { SmartContractInteractionService } from '@core/smartContract/smartContractService';
 import { ethers, BigNumber } from 'ethers';
 
@@ -22,6 +24,14 @@ export interface PotentialOpportunity {
     entryAmountBase: BigNumber;
     sourceTxHash: string;
     discoveryTimestamp: number;
+    sourceTxBlockNumber?: number; // Added for block age check
+    // Optional fields that might be useful for ESP or advanced logic later
+    usesFlashLoan?: boolean;
+    flashLoanAmountUsd?: number;
+    flashLoanFeeUsdEstimate?: number;
+    isOpportunistic?: boolean;
+    minPathLiquidityUsd?: number;
+    avgPathLiquidityUsd?: number;
 }
 
 export class OpportunityIdentificationService {
@@ -186,6 +196,10 @@ export class OpportunityIdentificationService {
                     entryAmountBase: entryAmountBase,
                     sourceTxHash: tx.txHash,
                     discoveryTimestamp: discoveryTimestamp,
+                    sourceTxBlockNumber: tx.blockNumber, // Populate from ProcessedMempoolTransaction
+                    // Initialize other optional fields if data is available or set to undefined/defaults
+                    usesFlashLoan: false, // Example default, logic for this would be more complex
+                    isOpportunistic: false, // Example default
                 });
                 logger.info({ pathId: opportunityId, leg1Dex: dexNameLeg1, leg2Dex: dexNameLeg2 }, "Identified potential 2-hop opportunity.");
             }

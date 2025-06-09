@@ -129,9 +129,14 @@ export class ESPMLService {
             const metadataFiles = files
                 .filter(file => file.startsWith('esp_model_') && file.endsWith('_metadata.json'))
                 .sort((a, b) => {
-                    const timeA = a.substring(a.lastIndexOf('_', a.lastIndexOf('_metadata.json') -1 ) - 15, a.lastIndexOf('_metadata.json'));
-                    const timeB = b.substring(b.lastIndexOf('_', b.lastIndexOf('_metadata.json') -1 ) - 15, b.lastIndexOf('_metadata.json'));
-                    return timeB.localeCompare(timeA);
+                    // Extracts YYYYMMDD_HHMMSS from filenames like esp_model_..._YYYYMMDD_HHMMSS_metadata.json
+                    const partsA = a.replace('_metadata.json', '').split('_');
+                    const timeA = partsA.length >= 2 ? partsA.slice(-2).join('_') : "";
+
+                    const partsB = b.replace('_metadata.json', '').split('_');
+                    const timeB = partsB.length >= 2 ? partsB.slice(-2).join('_') : "";
+
+                    return timeB.localeCompare(timeA); // Sorts newest first
                 });
             return metadataFiles.length > 0 ? metadataFiles[0] : null;
         } catch (error) {
