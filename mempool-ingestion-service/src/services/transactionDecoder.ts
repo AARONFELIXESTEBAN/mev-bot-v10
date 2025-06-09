@@ -6,7 +6,7 @@ import UniswapV2Router02ABI from '../abis/UniswapV2Router02.json';
 import SushiSwapRouterABI from '../abis/SushiSwapRouter.json';
 
 // +++ FIX: Added this import for the shared type.
-import { DecodedTransactionInput } from '../../../shared/types';
+import { DecodedTransactionInput } from '@shared/types';
 
 
 interface RouterInterface {

@@ -5,7 +5,6 @@ import { RpcService } from '@core/rpc/rpcService';
 import { SmartContractInteractionService } from '@core/smartContract/smartContractService';
 import { PotentialOpportunity } from '@services/opportunity/opportunityService';
 import { PriceService } from '@services/price/priceService';
-// Removed: import UniswapV2Router02ABI from '../../abis/UniswapV2Router02.json';
 
 const logger = getLogger();
 
@@ -64,7 +63,7 @@ export class SimulationService {
     private async getRouterContract(dexName: string, network: string = 'mainnet'): Promise<ethers.Contract | null> {
         // This should come from a more robust DEX registry in ConfigService or a dedicated DexRegistryService
         // Using a new config path for router addresses: 'opportunity_service.dex_routers'
-        const routers = this.configService.get('opportunity_service.dex_routers') as {[name: string]: string} || {};
+        const routers = this.configService.get('opportunity_service.dex_routers') as { [name: string]: string } || {};
 
         let routerAddress = routers[dexName];
         if (!routerAddress) { // Fallback to check some common ones if not explicitly mapped by name
@@ -88,13 +87,6 @@ export class SimulationService {
         const simTime = Date.now();
         const baseTokenDecimals = opportunity.tokenPath[0].decimals; // Assuming start and end token is base token
 
-        const resultTemplate: Partial<SimulationResult> = {
-            opportunity,
-            pathId: opportunity.id,
-            simulationTimestamp: simTime,
-            amountInLeg1: this.defaultSwapAmountBaseToken,
-        };
-
         // 1. Opportunity Freshness (SSOT 8.3.B)
         if ((simTime - opportunity.discoveryTimestamp) > this.opportunityFreshnessLimitMs) {
             logger.warn({ pathId: opportunity.id }, "SimulationService: Opportunity failed freshness check (too old).");
@@ -109,8 +101,10 @@ export class SimulationService {
                 estimatedGasCostBaseToken: BigNumber.from(0),
                 netProfitBaseToken: BigNumber.from(0),
                 netProfitUsd: 0,
+                amountInLeg1: this.defaultSwapAmountBaseToken,
                 amountOutLeg1: BigNumber.from(0),
                 amountOutLeg2: BigNumber.from(0),
+                simulationTimestamp: simTime,
             };
         }
         if (opportunity.sourceTxBlockNumber && (currentBlockNumber - opportunity.sourceTxBlockNumber > this.maxBlockAgeForOpportunity)) {
@@ -126,8 +120,10 @@ export class SimulationService {
                 estimatedGasCostBaseToken: BigNumber.from(0),
                 netProfitBaseToken: BigNumber.from(0),
                 netProfitUsd: 0,
+                amountInLeg1: this.defaultSwapAmountBaseToken,
                 amountOutLeg1: BigNumber.from(0),
                 amountOutLeg2: BigNumber.from(0),
+                simulationTimestamp: simTime,
             };
         }
 
@@ -146,8 +142,10 @@ export class SimulationService {
                 estimatedGasCostBaseToken: BigNumber.from(0),
                 netProfitBaseToken: BigNumber.from(0),
                 netProfitUsd: 0,
+                amountInLeg1: this.defaultSwapAmountBaseToken,
                 amountOutLeg1: BigNumber.from(0),
                 amountOutLeg2: BigNumber.from(0),
+                simulationTimestamp: simTime,
             };
         }
 
@@ -163,7 +161,7 @@ export class SimulationService {
             const amounts2 = await router2.getAmountsOut(amountOutLeg1, [opportunity.tokenPath[1].address, opportunity.tokenPath[2].address]);
             amountOutLeg2 = amounts2[1];
 
-            logger.debug({pathId: opportunity.id, leg1In: this.defaultSwapAmountBaseToken.toString(), leg1Out: amountOutLeg1.toString(), leg2Out: amountOutLeg2.toString()}, "Simulation successful for both legs.");
+            logger.debug({ pathId: opportunity.id, leg1In: this.defaultSwapAmountBaseToken.toString(), leg1Out: amountOutLeg1.toString(), leg2Out: amountOutLeg2.toString() }, "Simulation successful for both legs.");
 
         } catch (e: any) {
             logger.warn({ pathId: opportunity.id, err: e.message }, "SimulationService: Error during getAmountsOut simulation.");
@@ -178,8 +176,10 @@ export class SimulationService {
                 estimatedGasCostBaseToken: BigNumber.from(0),
                 netProfitBaseToken: BigNumber.from(0),
                 netProfitUsd: 0,
-                amountOutLeg1: BigNumber.from(0), // Or potentially the value of this.defaultSwapAmountBaseToken if leg1 succeeded
+                amountInLeg1: this.defaultSwapAmountBaseToken,
+                amountOutLeg1: BigNumber.from(0),
                 amountOutLeg2: BigNumber.from(0),
+                simulationTimestamp: simTime,
             };
         }
 
@@ -194,12 +194,14 @@ export class SimulationService {
                 amountInLeg1: this.defaultSwapAmountBaseToken,
                 isProfitable: false,
                 error: "Failed to get gas price.",
-                grossProfitBaseToken: BigNumber.from(0), // Assuming profit calculation can't proceed
+                grossProfitBaseToken: BigNumber.from(0),
                 estimatedGasCostBaseToken: BigNumber.from(0),
                 netProfitBaseToken: BigNumber.from(0),
                 netProfitUsd: 0,
-                amountOutLeg1: amountOutLeg1 || BigNumber.from(0), // Use calculated if available
+                amountInLeg1: this.defaultSwapAmountBaseToken,
+                amountOutLeg1: amountOutLeg1 || BigNumber.from(0),
                 amountOutLeg2: BigNumber.from(0),
+                simulationTimestamp: simTime,
             };
         }
         const gasPrice = feeData.gasPrice;
@@ -214,7 +216,6 @@ export class SimulationService {
         // Profit in USD
         const baseTokenUsdPrice = await this.priceService.getUsdPrice(opportunity.tokenPath[0].symbol); // Assumes tokenPath[0] is base (e.g. WETH)
         const netProfitUsd = parseFloat(ethers.utils.formatUnits(netProfitBaseToken, baseTokenDecimals)) * baseTokenUsdPrice;
-
 
         // Profit Realism Checks (SSOT 8.3.A)
         const profitPercentage = grossProfitBaseToken.mul(10000).div(this.defaultSwapAmountBaseToken).toNumber() / 100; // In percentage basis points
@@ -233,20 +234,22 @@ export class SimulationService {
         const isProfitable = netProfitBaseToken.gt(this.configService.get('simulation_service.min_net_profit_base_token_wei') || "0"); // Compare with min profit threshold from config
 
         const finalResult: SimulationResult = {
-            ...resultTemplate,
+            opportunity,
+            pathId: opportunity.id,
             isProfitable: isProfitable && !profitRealismCheckFailed && !maxProfitUsdCheckFailed,
             grossProfitBaseToken,
             estimatedGasCostBaseToken: totalGasCostBaseToken,
             netProfitBaseToken,
             netProfitUsd,
+            amountInLeg1: this.defaultSwapAmountBaseToken,
             amountOutLeg1,
             amountOutLeg2,
             profitRealismCheckFailed,
             maxProfitUsdCheckFailed,
-            // freshnessCheckFailed and blockAgeCheckFailed are set at the beginning
+            simulationTimestamp: simTime,
         };
 
-        if(finalResult.isProfitable) {
+        if (finalResult.isProfitable) {
             logger.info({ pathId: opportunity.id, netProfitEth: ethers.utils.formatUnits(netProfitBaseToken, baseTokenDecimals), netProfitUsd: netProfitUsd.toFixed(2) }, "SimulationService: Profitable opportunity found and passed checks.");
         } else {
             logger.info({ pathId: opportunity.id, netProfitEth: ethers.utils.formatUnits(netProfitBaseToken, baseTokenDecimals), isProfitable, profitRealismCheckFailed, maxProfitUsdCheckFailed }, "SimulationService: Opportunity not profitable or failed checks.");
