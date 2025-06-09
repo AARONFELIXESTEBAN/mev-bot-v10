@@ -113,7 +113,7 @@ export const UniswapV2PairABI: ReadonlyArray<string> = [
     "function price1CumulativeLast() external view returns (uint)",
     "function kLast() external view returns (uint)",
     "event Mint(address indexed sender, uint amount0, uint amount1)",
-    "event Burn(address indexed sender, uint amount0, uint amount1, address indexed to)",
+    "event Burn(address indexed sender, uint amount0, uint1, address indexed to)",
     "event Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)",
     "event Sync(uint112 reserve0, uint112 reserve1)",
     "function initialize(address, address) external",
