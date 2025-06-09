@@ -68,3 +68,4 @@ export const defaultFilterService = {
     isTransactionToKnownRouter: FilterService.isTransactionToKnownRouter,
     passesComplexFilter: FilterService.passesComplexFilter,
 };
+```
