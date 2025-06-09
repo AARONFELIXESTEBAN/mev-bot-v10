@@ -22,14 +22,13 @@
     "outDir": "dist",
     "baseUrl": ".", // Changed from "./src" to "." (project root)
     "paths": {
-      "@core/*": ["src/core/*"],
+      "@core/*": ["src/core/*"],       // Paths are now relative to project root
       "@services/*": ["src/services/*"],
       "@arbitrage/*": ["src/arbitrage/*"],
       "@utils/*": ["src/utils/*"],
-      "@shared/*": ["shared/*"],
-      "@interfaces/*": ["src/interfaces/*"],
-      "@abis/*": ["src/abis/*"],
-      "ethers": ["./node_modules/ethers"] // Added explicit path for ethers
+      "@shared/*": ["shared/*"],       // Path to shared is now direct from project root
+      "@interfaces/*": ["src/interfaces/*"], // Added for consistency from previous plan
+      "@abis/*": ["src/abis/*"]             // Added for consistency from previous plan
     }
   },
   "include": ["src/**/*.ts", "shared/**/*.ts"],

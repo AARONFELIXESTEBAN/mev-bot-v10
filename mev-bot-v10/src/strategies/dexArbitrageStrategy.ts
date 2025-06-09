@@ -61,19 +61,15 @@ export class DexArbitrageStrategy {
         }
 
         const profitAmount = simulation.netProfitBaseToken;
-        // Correctly access path and then segment details
-        const startTokenSegment = simulation.opportunity.path[0];
-        const endTokenSegment = simulation.opportunity.path[simulation.opportunity.path.length - 1]; // Last segment for end token
-
-        const startTokenAddress = startTokenSegment.tokenInAddress; // Address of the first token in the path
+        const startTokenAddress = simulation.opportunity.tokenPath[0].address;
 
         if (!this.virtualPortfolio[startTokenAddress]) {
             this.virtualPortfolio[startTokenAddress] = ethers.BigNumber.from(0);
         }
         this.virtualPortfolio[startTokenAddress] = this.virtualPortfolio[startTokenAddress].add(profitAmount);
 
-        const baseTokenDecimals = startTokenSegment.tokenInDecimals; // Decimals of the first token
-        const endTokenDecimals = endTokenSegment.tokenOutDecimals; // Decimals of the last token in the path
+        const baseTokenDecimals = simulation.opportunity.tokenPath[0].decimals;
+        const endTokenDecimals = simulation.opportunity.tokenPath[2].decimals;
         const tradeId = `${simulation.opportunity.id}-${simulation.simulationTimestamp}-${ethers.utils.formatUnits(simulation.amountInLeg1, baseTokenDecimals).slice(-6)}`;
         const paperTrade: PaperTrade = {
             id: tradeId,
@@ -90,8 +86,8 @@ export class DexArbitrageStrategy {
         await this.firestoreService.logData(paperTrade, this.paperTradeCollection, paperTrade.id);
         this.logger.info({
             tradeId: paperTrade.id,
-            opportunityIdLogged: paperTrade.opportunityId, // Corrected property name
             pathId: paperTrade.pathId,
+            pathIdLogged: paperTrade.opportunityPathId, // Changed from pathName to pathIdLogged for clarity
             profitBaseToken: paperTrade.simulatedNetProfitBaseToken,
             netProfitUsd: paperTrade.netProfitUsd,
             startToken: startTokenAddress,
