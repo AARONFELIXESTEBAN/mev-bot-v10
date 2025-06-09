@@ -1,25 +1,25 @@
-import { ethers, utils as ethersUtils, providers } from 'ethers';
+import { TransactionResponse, BigNumberish, Result } from "ethers"; // Ethers v6 specific imports
 
 export interface DecodedTransactionInput {
     functionName: string;
     signature: string;
-    args: ethersUtils.Result;
+    args: Result; // Ethers v6 Result type
     path?: string[];
-    amountOutMin?: ethers.BigNumber;
-    amountIn?: ethers.BigNumber;
-    amountOut?: ethers.BigNumber;
-    amountInMax?: ethers.BigNumber;
+    amountOutMin?: BigNumberish;
+    amountIn?: BigNumberish;
+    amountOut?: BigNumberish;
+    amountInMax?: BigNumberish;
     to?: string;
-    deadline?: ethers.BigNumber;
+    deadline?: BigNumberish;
     tokenA?: string;
     tokenB?: string;
-    amountADesired?: ethers.BigNumber;
-    amountBDesired?: ethers.BigNumber;
-    amountAMin?: ethers.BigNumber;
-    amountBMin?: ethers.BigNumber;
-    liquidity?: ethers.BigNumber;
+    amountADesired?: BigNumberish;
+    amountBDesired?: BigNumberish;
+    amountAMin?: BigNumberish;
+    amountBMin?: BigNumberish;
+    liquidity?: BigNumberish;
 }
 
-export interface FilterableTransaction extends providers.TransactionResponse {
+export interface FilterableTransaction extends TransactionResponse { // Ethers v6 TransactionResponse
     decodedInput?: DecodedTransactionInput & { routerName: string };
 }
