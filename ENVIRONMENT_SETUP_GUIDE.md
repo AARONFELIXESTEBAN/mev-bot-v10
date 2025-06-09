@@ -8,6 +8,7 @@ This guide provides comprehensive instructions for setting up the development en
     *   [Prerequisites](#windows-prerequisites)
     *   [Chocolatey Installation](#chocolatey-installation)
     *   [Git Installation](#git-installation)
+    *   [Node.js and TypeScript Setup (Primary for MEV Bot V10 Services)](#nodejs-and-typescript-setup-primary-for-mev-bot-v10-services)
     *   [Python Installation](#python-installation)
     *   [IDE Setup (VS Code)](#ide-setup-vs-code)
     *   [Google Cloud SDK Installation](#google-cloud-sdk-installation)
@@ -67,9 +68,49 @@ Git is essential for version control.
     ```
     You should see the Git version number.
 
+### Node.js and TypeScript Setup (Primary for MEV Bot V10 Services)
+
+The MEV Bot V10 services (`mempool-ingestion-service` and `mev-bot-v10`) are primarily developed using Node.js and TypeScript.
+
+1.  **Install Node.js and npm:**
+    *   **Windows (using Chocolatey):**
+        Open PowerShell as Administrator.
+        ```powershell
+        choco install nodejs-lts -y
+        ```
+    *   **Linux (GCE - Debian/Ubuntu):**
+        Refer to official NodeSource instructions for installing LTS versions (currently recommended):
+        ```bash
+        # Example for Node.js LTS (e.g., v18.x or v20.x - check current LTS)
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        ```
+    *   **Verify installation:**
+        ```bash
+        node -v
+        npm -v
+        ```
+2.  **Install TypeScript Globally (Optional, but can be useful for `tsc` command):**
+    ```bash
+    sudo npm install -g typescript
+    # Verify installation
+    tsc -v
+    ```
+3.  **Project Dependencies and Building:**
+    Within each service directory (e.g., `mempool-ingestion-service` or `mev-bot-v10`), after cloning the repository:
+    *   **Install local dependencies:** This installs packages listed in `package.json` into `node_modules`.
+        ```bash
+        npm install
+        ```
+    *   **Compile TypeScript to JavaScript:** Most TypeScript projects compile to a `dist` directory. This step is usually required before running the application.
+        ```bash
+        npm run build
+        ```
+    Always refer to the `scripts` section in the `package.json` file of each service for available commands like `build`, `start`, `dev`, etc.
+
 ### Python Installation
 
-Python is the primary programming language for this project. Refer to the SSOT document for the specific Python version.
+Python may be used for auxiliary scripts or other components. Refer to the SSOT document for the specific Python version if required for such parts of the project.
 
 1.  **Install Python using Chocolatey:**
     Open PowerShell as Administrator. Replace `PYTHON_VERSION` with the version specified in the SSOT (e.g., `3.10.7`).
@@ -84,7 +125,7 @@ Python is the primary programming language for this project. Refer to the SSOT d
     pip --version
     ```
     You should see the Python and pip version numbers.
-3.  **(Optional but Recommended) Create a Virtual Environment:**
+3.  **(Optional but Recommended) Create a Virtual Environment (for Python projects/scripts):**
     It's good practice to use virtual environments for Python projects.
     ```powershell
     python -m venv .venv
@@ -107,8 +148,11 @@ Visual Studio Code is the recommended IDE.
     code
     ```
     Go to the Extensions view (Ctrl+Shift+X) and install the following:
-    *   `Python` (ms-python.python)
-    *   `Pylance` (ms-python.vscode-pylance)
+    *   `Node.js Extension Pack` (waderyan.nodejs-extension-pack) - For Node.js/TypeScript development
+    *   `ESLint` (dbaeumer.vscode-eslint)
+    *   `Prettier - Code formatter` (esbenp.prettier-vscode)
+    *   `Python` (ms-python.python) - If using Python for parts of the project
+    *   `Pylance` (ms-python.vscode-pylance) - If using Python
     *   `GitLens` (eamodio.gitlens)
     *   Refer to the SSOT document for any project-specific recommended VS Code extensions.
 
@@ -148,12 +192,20 @@ The Google Cloud SDK is needed to interact with GCP services.
     Replace `REPOSITORY_URL` with the URL from the SSOT document.
     ```bash
     git clone REPOSITORY_URL
-    cd <repository-name>
+    cd <repository-name> # Or cd into specific service directory like mempool-ingestion-service
     ```
-2.  **Install Project Dependencies:**
-    Refer to the `README.md` or `requirements.txt` in the project repository. Typically:
+    If you cloned the root of a monorepo, navigate into the specific service directory (e.g., `cd mempool-ingestion-service`).
+    ```bash
+    # Install Node.js dependencies and build (if applicable for the service)
+    npm install
+    npm run build
+    ```
+2.  **Install Python Project Dependencies (if applicable):**
+    Refer to the `README.md` or `requirements.txt` in the project repository for Python components. Typically:
     ```powershell
-    # If using a virtual environment, ensure it's activated
+    # If using a virtual environment for Python, ensure it's activated
+    # python -m venv .venv
+    # .\.venv\Scripts\activate
     pip install -r requirements.txt
     ```
 
@@ -188,7 +240,7 @@ Refer to the SSOT document for GCE instance naming conventions, machine type, di
     *   `PROJECT_ID`: Your GCP Project ID.
     *   `ZONE`: e.g., `us-central1-a`
     *   `MACHINE_TYPE`: e.g., `e2-medium`
-    *   `IMAGE_FAMILY`: e.g., `ubuntu-2004-lts`
+    *   `IMAGE_FAMILY`: e.g., `ubuntu-2004-lts` (Ensure this is a suitable base for Node.js LTS)
     *   `IMAGE_PROJECT`: e.g., `ubuntu-os-cloud`
     *   `DISK_SIZE`: e.g., `50GB`
 2.  **Firewall Rules (if necessary):**
@@ -222,7 +274,25 @@ Once connected to your GCE instance via SSH, install the necessary software. The
     sudo apt install git -y
     git --version
     ```
-3.  **Install Python (and pip, venv):**
+3.  **Install Node.js and npm (Primary for MEV Bot V10 Services):**
+    Refer to official NodeSource instructions for installing LTS versions (currently recommended):
+    ```bash
+    # Example for Node.js LTS (e.g., v18.x or v20.x - check current LTS)
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+    ```
+    Verify installation:
+    ```bash
+    node -v
+    npm -v
+    ```
+4.  **Install TypeScript Globally (Optional, but can be useful for `tsc` command):**
+    ```bash
+    sudo npm install -g typescript
+    # Verify installation
+    tsc -v
+    ```
+5.  **Install Python (and pip, venv - for auxiliary scripts/components):**
     Refer to the SSOT for the specific Python version. Ubuntu LTS versions often come with a suitable Python version.
     ```bash
     sudo apt install python3 python3-pip python3-venv -y
@@ -230,7 +300,7 @@ Once connected to your GCE instance via SSH, install the necessary software. The
     pip3 --version
     ```
     If a specific version is required and not available via `apt`, you might need to compile from source or use a PPA (e.g., `deadsnakes`). This should be specified in the SSOT if necessary.
-4.  **Install Google Cloud SDK (Optional, if interacting with other GCP services from GCE):**
+6.  **Install Google Cloud SDK (Optional, if interacting with other GCP services from GCE):**
     While the GCE instance itself has service account credentials, installing `gcloud` can be useful for manual operations or if specific user authentication is needed.
     ```bash
     echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
@@ -239,7 +309,7 @@ Once connected to your GCE instance via SSH, install the necessary software. The
     sudo apt-get update && sudo apt-get install google-cloud-sdk -y
     ```
     Then initialize if needed: `gcloud init`.
-5.  **Install other project-specific dependencies:**
+7.  **Install other project-specific dependencies:**
     Refer to the SSOT or project `README.md` for any other tools (e.g., Docker, database clients). Example for Docker:
     ```bash
     sudo apt install docker.io -y
@@ -256,17 +326,25 @@ Once connected to your GCE instance via SSH, install the necessary software. The
     Replace `REPOSITORY_URL` with the URL from the SSOT document.
     ```bash
     git clone REPOSITORY_URL
-    cd <repository-name>
+    cd <repository-name> # Or cd into specific service directory like mempool-ingestion-service
     ```
-2.  **Create a Virtual Environment (Recommended):**
+    If you cloned the root of a monorepo, navigate into the specific service directory (e.g., `cd mempool-ingestion-service`).
+    ```bash
+    # Install Node.js dependencies and build (if applicable for the service)
+    npm install
+    npm run build
+    ```
+2.  **Create a Virtual Environment (Recommended for Python components):**
+    If Python components are used, create a virtual environment:
     ```bash
     python3 -m venv .venv
     source .venv/bin/activate
     ```
     Your shell prompt should now be prefixed with `(.venv)`.
-3.  **Install Project Dependencies:**
-    Refer to the `README.md` or `requirements.txt`.
+3.  **Install Python Project Dependencies (if applicable):**
+    Refer to the `README.md` or `requirements.txt` for Python components.
     ```bash
+    # Ensure Python virtual environment is active if used
     pip install -r requirements.txt
     ```
 

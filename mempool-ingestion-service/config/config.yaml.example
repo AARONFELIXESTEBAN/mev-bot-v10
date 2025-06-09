@@ -9,6 +9,9 @@ mempool_ws_url: "wss://eth-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY"
 
 # Firestore configuration (if FirestoreOutputStream is used)
 # The service account used by the application needs appropriate Firestore permissions.
+
+# The primary output of this service is via a WebSocket publisher (see PUBLISHER_PORT in .env).
+# Direct Firestore output from this service is optional and for archival/alternative data flow.
 firestore_collection: "mempool_transactions_stream_v1"
 
 # Output stream configuration (alternative to direct Firestore, if using a forwarder)

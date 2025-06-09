@@ -1,15 +1,131 @@
-// Placeholder for WebSocket Connector
-// Connects to mempool (e.g., Infura, Alchemy, or direct node WSS)
-export class WebsocketConnector {
-    constructor(private wsUrl: string) {
-        console.log(`Initializing WebSocket connector for ${wsUrl}`);
+import { ethers } from 'ethers';
+import { EventEmitter } from 'node:events';
+import config from '../utils/config';
+import logger from '../utils/logger';
+
+class WebsocketConnector extends EventEmitter {
+    private provider: ethers.providers.WebSocketProvider | null = null;
+    private url: string;
+    private reconnectAttempts = 0;
+    private explicitlyClosed = false;
+
+    constructor() {
+        super();
+        this.url = config.websocketUrl;
+        logger.info(`WebsocketConnector initialized with URL: ${this.url}`);
     }
 
-    connect() {
-        // Implementation for WebSocket connection
+    public connect(): void {
+        if (this.provider) {
+            logger.warn('Connection attempt while provider already exists. Closing existing one.');
+            this.provider.removeAllListeners();
+            // Attempt to close, but ignore errors as we are reconnecting anyway
+            try {
+                this.provider.websocket.close();
+            } catch (error) {
+                logger.warn('Error closing existing WebSocket during reconnect attempt:', error);
+            }
+            this.provider = null;
+        }
+
+        this.explicitlyClosed = false; // Reset explicit close flag on new connection attempt
+        logger.info(`Connecting to WebSocket: ${this.url}`);
+
+        try {
+            this.provider = new ethers.providers.WebSocketProvider(this.url);
+        } catch (error) {
+            logger.error('Failed to create WebSocketProvider instance:', error);
+            this.handleReconnect();
+            return;
+        }
+
+        this.provider.on('open', () => {
+            logger.info('WebSocket connection established.');
+            this.emit('connected');
+            this.reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+        });
+
+        this.provider.on('pending', (txHash: string) => {
+            // logger.debug(`Received pending transaction hash: ${txHash}`);
+            this.emit('txHash', txHash);
+        });
+
+        // Handle internal errors from the WebSocket connection itself
+        this.provider.websocket.onerror = (error: Event) => {
+            logger.error('WebSocket internal error:', error);
+            this.emit('error', error);
+            // this.handleReconnect(); // Decide if all errors should trigger reconnect
+        };
+
+        // Handle errors from the ethers.js WebSocketProvider
+        this.provider.on('error', (error: any) => {
+            logger.error('WebSocketProvider error:', error);
+            this.emit('error', error);
+            // It's common for 'error' to be followed by 'close', so reconnect might be handled there
+        });
+
+        this.provider.websocket.onclose = (event: CloseEvent) => {
+            logger.info(`WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}, Clean: ${event.wasClean}`);
+            this.emit('disconnected', event.code, event.reason);
+            if (!this.explicitlyClosed) {
+                this.handleReconnect();
+            } else {
+                logger.info('Connection closed explicitly. Not attempting to reconnect.');
+                this.emit('closed');
+            }
+        };
     }
 
-    onMessage(callback: (data: any) => void) {
-        // Implementation for message handling
+    private handleReconnect(): void {
+        if (this.explicitlyClosed) {
+            logger.info("Reconnection skipped as connection was closed explicitly.");
+            return;
+        }
+
+        if (this.reconnectAttempts >= config.maxReconnectAttempts) {
+            logger.error(`Max reconnect attempts (${config.maxReconnectAttempts}) reached. Emitting reconnectFailed.`);
+            this.emit('reconnectFailed');
+            return;
+        }
+
+        this.reconnectAttempts++;
+        // Exponential backoff with jitter
+        const baseDelay = config.reconnectIntervalMs * Math.pow(2, this.reconnectAttempts -1);
+        const jitter = Math.random() * baseDelay * 0.3; // Add up to 30% jitter
+        const delay = Math.min(baseDelay + jitter, 60000); // Cap delay at 60 seconds
+
+        logger.info(`Attempting to reconnect (attempt ${this.reconnectAttempts}/${config.maxReconnectAttempts}) in ${delay.toFixed(0)}ms...`);
+
+        setTimeout(() => {
+            this.connect();
+        }, delay);
     }
+
+    public getProviderInstance(): ethers.providers.WebSocketProvider | null {
+        return this.provider;
+    }
+
+    public close(): void {
+        logger.info('Explicitly closing WebSocket connection.');
+        this.explicitlyClosed = true;
+        if (this.provider) {
+            try {
+                this.provider.websocket.close(1000, 'Closed by client'); // 1000 is a normal closure
+                this.provider.removeAllListeners(); // Clean up listeners
+            } catch (error) {
+                logger.error('Error while closing WebSocket:', error);
+            } finally {
+                this.provider = null;
+            }
+        } else {
+            logger.warn('Close called but no active provider to close.');
+        }
+        // Emit 'closed' here if you want immediate notification,
+        // or rely on the onclose handler to emit it.
+        // For clarity, emitting it from onclose handler when explicitlyClosed is true.
+    }
+
+    // on and emit methods are inherited from EventEmitter
 }
+
+export default WebsocketConnector;
