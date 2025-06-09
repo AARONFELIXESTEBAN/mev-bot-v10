@@ -272,6 +272,46 @@ export class PriceService {
         logger.warn(`PriceService: USD price for ${tokenSymbol} not available in MVP. Returning 0.`);
         return 0; // Or throw an error
     }
+
+    /**
+     * Gets the current base fee in Gwei.
+     * Placeholder: Fetches from config or returns a default. Real implementation would use RpcService.
+     * @returns Current base fee in Gwei, or null if unavailable.
+     */
+    public getCurrentBaseFeeGwei(): number | null {
+        // For MVP, this could be a configured default or fetched periodically by RpcService.
+        // Let's assume a config value for now or a very simple placeholder.
+        const baseFee = this.configService.get('price_service.default_base_fee_gwei');
+        if (baseFee !== undefined) {
+            return parseFloat(baseFee as string);
+        }
+        logger.warn("PriceService: getCurrentBaseFeeGwei placeholder returning default (e.g., 20 Gwei). Implement actual RPC fetch.");
+        return 20; // Example placeholder
+    }
+
+    /**
+     * Gets current gas prices (max fee, priority fee) in Gwei.
+     * Placeholder: Returns default values. Real implementation would use RpcService.
+     * @returns Object with gas prices, or null if unavailable.
+     */
+    public getCurrentGasPrices(): { maxFeePerGasGwei: number, priorityFeePerGasGwei: number } | null {
+        // For MVP, these could be configured defaults.
+        // Real implementation: this.rpcService.getFeeData() and convert from Wei to Gwei.
+        const maxFee = this.configService.get('price_service.default_max_fee_gwei');
+        const priorityFee = this.configService.get('price_service.default_priority_fee_gwei');
+
+        if (maxFee !== undefined && priorityFee !== undefined) {
+            return {
+                maxFeePerGasGwei: parseFloat(maxFee as string),
+                priorityFeePerGasGwei: parseFloat(priorityFee as string),
+            };
+        }
+        logger.warn("PriceService: getCurrentGasPrices placeholder returning defaults (e.g., Max:50, Prio:2 Gwei). Implement actual RPC fetch.");
+        return { // Example placeholders
+            maxFeePerGasGwei: 50,
+            priorityFeePerGasGwei: 2,
+        };
+    }
 }
 
 [end of mev-bot-v10/src/services/price/priceService.ts]

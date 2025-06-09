@@ -94,6 +94,24 @@ execution_config:
 orchestrator:
   block_update_interval_ms: 12000 # How often to fetch the current block number
 
+# ESP Model Configuration
+esp_model_config:
+  model_base_path: "./trained_models_from_python" # Path where Python pipeline saves models (e.g., relative to running dir or absolute)
+  prediction_threshold: 0.65 # Minimum probability from ESP model to proceed to execution logic
+  # profitability_threshold: 0.55 # Optional: If ESP also predicts a separate profitability score to check
+
+# Execution Configuration (Phase 2)
+execution_config:
+  enabled: false # Master switch for live trading
+  base_priority_fee_gwei_v10: "1.0" # Default base for maxPriorityFeePerGas if RPC suggestion is too low or unavailable
+  max_gas_price_gwei_v10: "250"    # Absolute ceiling for maxFeePerGas
+  max_slippage_bps_v10_base: "10"    # Default base slippage tolerance in basis points (e.g., 10 bps = 0.1%)
+  default_slippage_bps: "50" # Default slippage for B20_botProposedSlippageToleranceBps_SwapN feature if no dynamic module
+  flashbots_relay_url: "https://relay.flashbots.net" # Example for Flashbots mainnet relay
+  # flashbots_signing_key: "" # This would be the actual key if set directly (NOT RECOMMENDED for prod). Use secret below.
+  flashbots_signing_key_secret_name: "FLASHBOTS_REPUTATION_KEY_V10" # Name of the secret in GCP Secret Manager holding the Flashbots signing key
+  target_block_offset: 1 # For Flashbots: target current block + offset (e.g., 1 for next block, 2 for block after next)
+
 # Secrets to load from GCP Secret Manager in production
 secrets_to_load:
   - "RPC_URL_MAINNET_HTTP"
