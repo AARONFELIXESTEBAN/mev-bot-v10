@@ -97,6 +97,17 @@ export class ConfigService {
             'UNISWAPV2_ROUTER_ADDRESS': 'opportunity_service.dex_routers.UniswapV2Router02',
             'SUSHISWAP_ROUTER_ADDRESS': 'opportunity_service.dex_routers.SushiSwapRouter',
             'WETH_USD_PRICE_ESTIMATE': 'price_service.weth_usd_price_estimate',
+            // ESP Model Config
+            'ESP_MODEL_BASE_PATH': 'esp_model_config.model_base_path',
+            'ESP_PREDICTION_THRESHOLD': 'esp_model_config.prediction_threshold',
+            // Execution Config
+            'EXECUTION_BASE_PRIORITY_FEE_GWEI_V10': 'execution_config.base_priority_fee_gwei_v10',
+            'EXECUTION_MAX_GAS_PRICE_GWEI_V10': 'execution_config.max_gas_price_gwei_v10',
+            'EXECUTION_MAX_SLIPPAGE_BPS_V10_BASE': 'execution_config.max_slippage_bps_v10_base',
+            'EXECUTION_DEFAULT_SLIPPAGE_BPS': 'execution_config.default_slippage_bps',
+            'FLASHBOTS_RELAY_URL': 'execution_config.flashbots_relay_url',
+            'FLASHBOTS_SIGNING_KEY': 'execution_config.flashbots_signing_key', // Direct key for local, secret name for prod is in YAML
+            'EXECUTION_TARGET_BLOCK_OFFSET': 'execution_config.target_block_offset',
         };
 
         for (const envVar in envToConfigMap) {
@@ -225,6 +236,17 @@ export class ConfigService {
             'UNISWAPV2_ROUTER_ADDRESS': 'opportunity_service.dex_routers.UniswapV2Router02',
             'SUSHISWAP_ROUTER_ADDRESS': 'opportunity_service.dex_routers.SushiSwapRouter',
             'WETH_USD_PRICE_ESTIMATE': 'price_service.weth_usd_price_estimate',
+            // ESP Model Config
+            'ESP_MODEL_BASE_PATH': 'esp_model_config.model_base_path',
+            'ESP_PREDICTION_THRESHOLD': 'esp_model_config.prediction_threshold',
+            // Execution Config
+            'EXECUTION_BASE_PRIORITY_FEE_GWEI_V10': 'execution_config.base_priority_fee_gwei_v10',
+            'EXECUTION_MAX_GAS_PRICE_GWEI_V10': 'execution_config.max_gas_price_gwei_v10',
+            'EXECUTION_MAX_SLIPPAGE_BPS_V10_BASE': 'execution_config.max_slippage_bps_v10_base',
+            'EXECUTION_DEFAULT_SLIPPAGE_BPS': 'execution_config.default_slippage_bps',
+            'FLASHBOTS_RELAY_URL': 'execution_config.flashbots_relay_url',
+            'FLASHBOTS_SIGNING_KEY': 'execution_config.flashbots_signing_key',
+            'EXECUTION_TARGET_BLOCK_OFFSET': 'execution_config.target_block_offset',
         };
     }
 

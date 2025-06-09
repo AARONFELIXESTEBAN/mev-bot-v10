@@ -1,0 +1,21 @@
+# Terraform Variable Values Example - Copy to terraform.tfvars and fill in
+
+# GCP Configuration
+gcp_project_id            = "your-gcp-project-id-here"
+# gcp_region                = "us-central1" # Optional: Overrides default in main.tf or variables.tf
+# gce_zone                  = "us-central1-a" # Optional: Overrides default
+# gce_machine_type          = "e2-medium"     # Optional: Overrides default
+
+# Service Account for GCE VMs (must be created manually with appropriate permissions)
+gcp_service_account_email = "your-vm-service-account-email@your-gcp-project-id.iam.gserviceaccount.com"
+
+# Networking
+# mempool_publisher_port    = "3001" # Optional: Overrides default
+
+# VM Naming (Optional: Overrides defaults in main.tf)
+# vm_name_bot               = "mev-bot-v10-custom-name"
+# vm_name_mempool           = "mempool-ingestion-custom-name"
+
+# GCE Image (Optional: Overrides defaults in main.tf)
+# gce_image_family          = "ubuntu-2004-lts"
+# gce_image_project         = "ubuntu-os-cloud"

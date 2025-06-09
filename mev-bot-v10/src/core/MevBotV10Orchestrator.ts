@@ -13,10 +13,14 @@ import { PriceService } from '../services/price/priceService';
 import { OpportunityIdentificationService, ProcessedMempoolTransaction, PotentialOpportunity } from '../services/opportunity/opportunityService';
 import { SimulationService, SimulationResult } from '../services/simulation/simulationService';
 import { FilterableTransaction } from '@shared/types';
-import { DexArbitrageStrategy } from '../strategies/dexArbitrageStrategy'; // Paper Trading Logic
-import { TokenInfo } from '../utils/typeUtils';
+import { DexArbitrageStrategy } from '../strategies/dexArbitrageStrategy';
+import { ESPMLService, EspPredictionResult } from '../services/esp/espService';
+import { DynamicGasStrategyModule, GasParams } from '../services/execution/gasStrategy'; // Added
+import { AdvancedSlippageControlModule } from '../services/execution/slippageControl'; // Added
+import { ExecutionService } from '../services/execution/executionService'; // Added
+import { TokenInfo, Dict, PathSegment } from '../utils/typeUtils'; // Added PathSegment
 
-let logger: PinoLogger; // Will be initialized after config
+let logger: PinoLogger;
 
 const DEFAULT_RECONNECT_INTERVAL_MS = 5000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -31,6 +35,10 @@ export class MevBotV10Orchestrator {
     private opportunityService: OpportunityIdentificationService;
     private simulationService: SimulationService;
     private paperTradingStrategy: DexArbitrageStrategy;
+    private espService: ESPMLService;
+    private gasStrategyModule: DynamicGasStrategyModule; // Added
+    private slippageControlModule: AdvancedSlippageControlModule; // Added
+    private executionService: ExecutionService; // Added
 
     private mempoolWsClient: WebSocket | null = null;
     private mempoolWsUrl: string;
@@ -60,6 +68,13 @@ export class MevBotV10Orchestrator {
         this.opportunityService = new OpportunityIdentificationService(this.configService, this.priceService, this.scService);
 
         this.simulationService = new SimulationService(this.configService, this.rpcService, this.scService, this.priceService);
+
+        this.espService = new ESPMLService(this.configService);
+
+        this.gasStrategyModule = new DynamicGasStrategyModule(this.configService, this.rpcService); // Added
+        this.slippageControlModule = new AdvancedSlippageControlModule(this.configService, this.priceService); // Added
+        this.executionService = new ExecutionService(this.configService, this.rpcService, this.kmsService, this.dataCollectionService); // Added
+
         this.paperTradingStrategy = new DexArbitrageStrategy(this.dataCollectionService,
             (this.configService.get('paper_trading_config.firestore_collection_paper_trades') as string | undefined) || 'paper_trades_v10_dex_arb',
             (this.configService.get('paper_trading_config.initial_portfolio') as { [tokenAddress: string]: string } | undefined) || undefined
@@ -78,6 +93,11 @@ export class MevBotV10Orchestrator {
             // or services are designed to pick up changes from ConfigService.
             logger.info("Production mode: Secrets loaded/checked.");
         }
+
+        // Initialize services that require async setup
+        await this.opportunityService.init();
+        await this.espService.init();
+        await this.executionService.init(this.rpcService.getProvider('mainnet', 'http') as ethers.providers.JsonRpcProvider); // Pass provider for Flashbots
 
         this.explicitlyStopped = false;
         this.connectToMempoolService();
@@ -224,6 +244,7 @@ export class MevBotV10Orchestrator {
         const executionEnabled = this.configService.get('execution_config.enabled') === true;
 
         let discardReason = "";
+        let espPrediction: EspPredictionResult | null = null;
 
         if (simResult.error) discardReason = `Simulation error: ${simResult.error}`;
         else if (simResult.freshnessCheckFailed) discardReason = "Freshness check failed (too old)";
@@ -233,46 +254,279 @@ export class MevBotV10Orchestrator {
         else if (!simResult.isProfitable) discardReason = "Not profitable after simulation";
         else if (simResult.netProfitUsd < minProfitUsd) discardReason = `Net profit USD ${simResult.netProfitUsd.toFixed(2)} is less than min threshold $${minProfitUsd}`;
 
+        // If all preliminary checks pass, then call ESP Service
+        if (!discardReason) {
+            logger.info({ pathId: simResult.pathId }, "Preliminary checks passed. Evaluating with ESP ML Model...");
+            const assembledFeatures = await this._assembleEspInputFeatures(simResult.opportunity, simResult);
+            espPrediction = await this.espService.predict(assembledFeatures);
+
+            await this.dataCollectionService.logData({
+                type: "esp_evaluation_attempt",
+                opportunityId: simResult.opportunity.id,
+                simulationPathId: simResult.pathId,
+                inputFeatures: assembledFeatures, // Log the assembled features sent to ESP
+                prediction: espPrediction,
+                timestamp: new Date().toISOString()
+            }, "esp_evaluations_v10");
+
+            if (espPrediction.error) {
+                discardReason = `ESP Error: ${espPrediction.error}`;
+            } else if (espPrediction.executionSuccessProbability < (this.configService.get('esp_model_config.prediction_threshold') as number || 0.6)) {
+                discardReason = `ESP prediction ${espPrediction.executionSuccessProbability.toFixed(3)} below threshold`;
+            }
+        }
+
+        // If ESP validation fails, discard the opportunity
         if (discardReason) {
-            logger.info({ pathId: simResult.pathId, reason: discardReason, netProfitUSD: simResult.netProfitUsd?.toFixed(2) }, "Opportunity discarded.");
-            // Optionally log discarded opportunities to Firestore for analysis
+            logger.info({ pathId: simResult.pathId, reason: discardReason, netProfitUSD: simResult.netProfitUsd?.toFixed(2), espProb: espPrediction?.executionSuccessProbability?.toFixed(3) }, "Opportunity discarded post ESP or initial checks.");
             if (this.configService.get('data_collection.log_discarded_opportunities') === true) {
                 await this.dataCollectionService.logData({
                     type: "discarded_opportunity",
                     pathId: simResult.pathId,
                     reason: discardReason,
-                    simulation: simResult,
+                    initialSimulation: simResult, // Log the initial simulation result
+                    espPrediction: espPrediction,
                 }, "discarded_opportunities_v10");
             }
             return;
         }
 
+        // ESP validation passed, now prepare for execution (or final paper trade logging)
+        logger.info({ pathId: simResult.pathId, espProb: espPrediction?.executionSuccessProbability.toFixed(3) }, "Opportunity passed ESP validation. Proceeding to final parameter generation.");
+
+        // 1. Get Optimal Gas Parameters
+        const optimalGasParams = await this.gasStrategyModule.getOptimalGas(this.network, simResult.opportunity, espPrediction);
+
+        // 2. Final Pre-Flight Simulation with Optimal Gas
+        // This simulation uses the dynamic gas parameters to get the most accurate P&L before execution.
+        const finalSimResult = await this.simulationService.simulateArbitragePath(
+            simResult.opportunity, // Use the original opportunity
+            this.currentBlockNumber,
+            this.network,
+            optimalGasParams // Pass the determined optimal gas params
+        );
+
+        // Re-check profitability with these more accurate execution parameters
+        if (!finalSimResult.isProfitable || finalSimResult.netProfitUsd < minProfitUsd) {
+            discardReason = `Not profitable after final simulation with optimal gas/slippage. Net USD: ${finalSimResult.netProfitUsd.toFixed(2)}`;
+            logger.info({ pathId: finalSimResult.pathId, reason: discardReason, netProfitUSD: finalSimResult.netProfitUsd?.toFixed(2) }, "Opportunity discarded after final pre-flight simulation.");
+            if (this.configService.get('data_collection.log_discarded_opportunities') === true) {
+                 await this.dataCollectionService.logData({
+                    type: "discarded_opportunity_post_final_sim",
+                    pathId: finalSimResult.pathId,
+                    reason: discardReason,
+                    initialSimulation: simResult,
+                    espPrediction: espPrediction,
+                    finalSimulation: finalSimResult,
+                }, "discarded_opportunities_v10");
+            }
+            return;
+        }
+
+        // 3. Calculate amountOutMin for each leg using AdvancedSlippageControlModule
+        const amountsOutMin: BigNumber[] = [];
+        if (finalSimResult.pathSegmentSimulations && finalSimResult.pathSegmentSimulations.length > 0) {
+            for (const segmentSim of finalSimResult.pathSegmentSimulations) {
+                const amountOutMinForSegment = this.slippageControlModule.getAmountOutMin(
+                    segmentSim.expectedOutputAmount,
+                    segmentSim.segment, // This is the PathSegment
+                    espPrediction
+                );
+                amountsOutMin.push(amountOutMinForSegment);
+            }
+        } else {
+            logger.error({pathId: finalSimResult.pathId}, "No path segment simulations found in finalSimResult to calculate amountOutMin values.");
+            // Handle error, perhaps discard
+            return;
+        }
+
+
         logger.info({
-            pathId: simResult.pathId,
-            netProfitBase: ethers.utils.formatUnits(simResult.netProfitBaseToken, this.baseToken.decimals),
-            netProfitUsd: simResult.netProfitUsd.toFixed(2),
-        }, "Profitable opportunity identified and passed all checks!");
+            pathId: finalSimResult.pathId,
+            netProfitBase: ethers.utils.formatUnits(finalSimResult.netProfitBaseToken, this.baseToken.decimals),
+            netProfitUsd: finalSimResult.netProfitUsd.toFixed(2),
+            espProb: espPrediction?.executionSuccessProbability.toFixed(3),
+            maxFeePerGas: ethers.utils.formatUnits(optimalGasParams.maxFeePerGas, 'gwei'),
+            maxPriorityFeePerGas: ethers.utils.formatUnits(optimalGasParams.maxPriorityFeePerGas, 'gwei'),
+            amountsOutMin: amountsOutMin.map((a, i) => ethers.utils.formatUnits(a, finalSimResult.pathSegmentSimulations[i].segment.tokenOutDecimals))
+        }, "Final parameters generated for profitable opportunity!");
 
         if (paperTradingMode && !executionEnabled) {
-            logger.info({ pathId: simResult.pathId }, "Paper trading mode: Logging paper trade.");
-            await this.paperTradingStrategy.executePaperTrade(simResult);
-            // DataCollectionService is called within paperTradingStrategy
+            logger.info({ pathId: finalSimResult.pathId }, "Paper trading mode: Logging paper trade with final parameters.");
+            // Pass finalSimResult to paper trading, which now contains gasParamsUsed
+            await this.paperTradingStrategy.executePaperTrade(finalSimResult);
         } else if (executionEnabled) {
-            logger.warn({ pathId: simResult.pathId }, "Execution mode enabled but not implemented in this MVP orchestrator version.");
-            // TODO: Implement actual trade execution logic if EXECUTION_ENABLED is true
-            // This would involve using KmsSigningService and RpcService to send transactions.
+            logger.warn({ pathId: finalSimResult.pathId }, "LIVE EXECUTION ENABLED. Attempting to execute trade.");
+            const executionResult = await this.executionService.executeArbitrageTransaction(
+                finalSimResult.opportunity,
+                finalSimResult.pathSegmentSimulations, // Has expected amounts for each leg
+                optimalGasParams,
+                amountsOutMin // Array of BigNumber from slippage control module
+            );
+
+            await this.dataCollectionService.logData({
+                type: "execution_attempt_v10", // More specific type
+                opportunityId: finalSimResult.opportunity.id,
+                simulationPathId: finalSimResult.pathId,
+                finalSimulationResult: finalSimResult, // Log the simulation that led to execution
+                gasParamsAttempted: optimalGasParams,
+                amountsOutMinAttempted: amountsOutMin.map((a, i) => ethers.utils.formatUnits(a, finalSimResult.pathSegmentSimulations[i].segment.tokenOutDecimals)),
+                executionResult: executionResult,
+                timestamp: new Date().toISOString()
+            }, "execution_attempts_v10");
+
+            if (executionResult.success) {
+                logger.info({ txHash: executionResult.transactionHash, bundleHash: executionResult.bundleHash }, "Trade submitted via ExecutionService.");
+                // Nonce would have been incremented by ExecutionService.
+                // If submission failed before tx was accepted by network (e.g. Flashbots error, bad nonce),
+                // ExecutionService's acquireNonce might need adjustment or a way to signal consumption.
+                // For now, assume ExecutionService handles its nonce state internally on failure/success.
+            } else {
+                logger.error({ error: executionResult.error, pathId: finalSimResult.pathId }, "Trade execution via ExecutionService failed.");
+                // Consider if nonce needs external reset/sync if ExecutionService couldn't submit due to it.
+                // ExecutionService itself calls synchronizeNonce on error.
+            }
         } else {
-            logger.info({ pathId: simResult.pathId }, "Not in paper trading mode or execution disabled. Opportunity logged if not discarded.");
+            logger.info({ pathId: finalSimResult.pathId }, "Not in paper trading mode or execution disabled.");
         }
     }
 
-    private get baseToken(): TokenInfo { // Ensure TokenInfo here is the imported type
+    private get baseToken(): TokenInfo {
         return {
             address: this.configService.getOrThrow('opportunity_service.base_token_address') as string,
             symbol: (this.configService.get('opportunity_service.base_token_symbol') as string | undefined) || 'WETH',
             decimals: parseInt((this.configService.get('opportunity_service.base_token_decimals') as string | undefined) || '18'),
             name: (this.configService.get('opportunity_service.base_token_symbol') as string | undefined) || 'Wrapped Ether'
         };
+    }
+
+    // Helper method to assemble features for ESPMLService
+    private async _assembleEspInputFeatures(opp: PotentialOpportunity, simResult: SimulationResult): Promise<Dict<any>> {
+        const features: Dict<any> = {};
+        const expectedFeatureOrder = this.espService.getFeatureColumnsOrdered();
+
+        if (!expectedFeatureOrder) {
+            logger.error("Could not retrieve expected feature order from ESPService. Cannot assemble features.");
+            return {}; // Return empty or throw; an empty dict will likely fail prediction or produce nonsense
+        }
+
+        // This is where the detailed mapping from opp, simResult, and other services to the *raw input features*
+        // that the Python feature_generator.py script expects will occur.
+        // The ESPMLService.prepareFeatures will then take these raw inputs and generate the final scaled vector.
+
+        // For Phase 2 Alpha MVP, many of these will be defaults or placeholders.
+        // The goal is to provide the *inputs* that the Python feature_generator.py script would have used.
+        // The ESPMLService.prepareFeatures then becomes the TypeScript equivalent of feature_generator.py + scaling.
+
+        // A. Opportunity-Specific Features (Raw inputs for these)
+        // Note: Profit and gas are from initial simulation (pre-ESP), not pre-simulation estimates.
+        // The model was trained on features derived from data *before* execution was certain.
+        // For 'estimatedNetProfitUsd_PreEsp', this should be the profit *before* this specific ESP check,
+        // likely from an initial, less resource-intensive simulation or estimation if available.
+        // If simResult is the first detailed sim, then its gross profit can be a proxy.
+        const ethPrice = await this.priceService.getUsdPrice(this.baseToken.symbol);
+        features['estimatedNetProfitUsd_PreEsp'] = simResult.grossProfitBaseToken ? parseFloat(ethers.utils.formatUnits(simResult.grossProfitBaseToken, this.baseToken.decimals)) * ethPrice : 0;
+        features['estimatedGasCostUsd_Initial'] = simResult.estimatedGasCostBaseToken ? parseFloat(ethers.utils.formatUnits(simResult.estimatedGasCostBaseToken, this.baseToken.decimals)) * ethPrice : 0;
+        // 'initialProfitToGasRatio' will be derived by ESPMLService.prepareFeatures
+        features['pathLength'] = opp.path.length;
+        features['usesFlashLoan'] = opp.usesFlashLoan || 0; // Assuming PotentialOpportunity has this
+        features['flashLoanAmountUsd'] = opp.flashLoanAmountUsd || 0; // Assuming PotentialOpportunity has this
+        features['flashLoanFeeUsd_Estimate'] = opp.flashLoanFeeUsdEstimate || 0; // Assuming PotentialOpportunity has this
+
+        const uniqueTokens = new Set<string>();
+        const uniqueDexes = new Set<string>();
+        opp.path.forEach(segment => {
+            uniqueTokens.add(segment.tokenInAddress);
+            uniqueTokens.add(segment.tokenOutAddress);
+            uniqueDexes.add(segment.dexName);
+        });
+        features['involvedTokenCount_Unique'] = uniqueTokens.size;
+        features['involvedDexCount_Unique'] = uniqueDexes.size;
+
+        // For A10_tokenIsCore_TokenN, ESPMLService.prepareFeatures will need the path and core token list
+        features['pathTokenAddresses'] = opp.path.map(p => ({tokenIn: p.tokenInAddress, tokenOut: p.tokenOutAddress})); // Pass raw path addresses
+        // features['coreTokenList'] = (this.configService.get('opportunity_service.core_whitelisted_tokens_csv') as string || "").split(','); // ESP can get this from its own config or passed
+
+        // A12, A13 (min/avg path liquidity) - these are complex, likely from a dedicated liquidity service or deeper simulation. Placeholder.
+        features['minPathLiquidityUsd'] = simResult.minPathLiquidityUsd || 0; // Assuming simResult might have this
+        features['avgPathLiquidityUsd'] = simResult.avgPathLiquidityUsd || 0; // Assuming simResult might have this
+        features['isCrossDexArbitrage'] = uniqueDexes.size > 1 ? 1 : 0;
+        features['opportunityAgeMs'] = Date.now() - opp.discoveryTimestamp;
+
+
+        // B. Real-Time Gas & Proposed Execution Parameters (Raw inputs)
+        features['currentBlockNumber'] = this.currentBlockNumber;
+        features['currentBaseFeeGwei'] = this.priceService.getCurrentBaseFeeGwei() || 0;
+        const currentGas = this.priceService.getCurrentGasPrices();
+        features['botProposedMaxFeePerGasGwei'] = currentGas?.maxFeePerGasGwei || 0; // Or from a dynamic gas estimator
+        features['botProposedMaxPriorityFeePerGasGwei'] = currentGas?.priorityFeePerGasGwei || 0;
+        // B20 botProposedSlippageToleranceBps_SwapN - from config or dynamic module
+        for (let i = 0; i < opp.path.length; i++) {
+            features[`botProposedSlippageToleranceBps_Swap${i+1}`] = this.configService.get('execution_config.default_slippage_bps') || 50; // Example default
+        }
+
+
+        // C. Mempool-Derived Features - Placeholders for Phase 2 Alpha MVP
+        this.logger.warn("Mempool-derived features (C21-C28) are using default/placeholder values for ESP input.");
+        features['mempool_TotalPendingTxCount'] = 0;
+        features['mempool_HighGasTxCount_LastMinute'] = 0;
+        for (let i = 0; i < opp.path.length; i++) {
+            features[`mempool_TargetPool_PendingTxCount_Swap${i+1}`] = 0;
+            features[`mempool_TargetPool_PendingVolumeUsd_Swap${i+1}`] = 0;
+        }
+        features['mempool_AvgPriorityFeeGwei_Recent'] = 0;
+        features['mempool_competingMevTxSignatureCount'] = 0;
+        // Attempt to get actual block timestamp for more accurate timeSinceLastBlockMs
+        let timeSinceLastBlockMs = 0;
+        try {
+            const blockTimestamp = await this.rpcService.getBlockTimestamp(this.currentBlockNumber, this.network); // Ensure network is passed
+            if (blockTimestamp) {
+                 timeSinceLastBlockMs = Date.now() - (blockTimestamp * 1000);
+            } else if (simResult.opportunity.sourceTxBlockNumber) { // Fallback if current block timestamp fails
+                timeSinceLastBlockMs = (this.currentBlockNumber - simResult.opportunity.sourceTxBlockNumber) * 12000; // Approx 12s per block
+            } else {
+                timeSinceLastBlockMs = Date.now() - simResult.opportunity.discoveryTimestamp; // Rough estimate
+            }
+        } catch(e) { logger.debug("Could not get block timestamp for timeSinceLastBlockMs feature"); }
+        features['timeSinceLastBlockMs'] = timeSinceLastBlockMs;
+        features['mempool_gasPriceVolatility_ShortTerm'] = 0;
+
+
+        // D. Market Condition & Token-Specific Features
+        features['ethPriceUsd_Current'] = ethPrice;
+        this.logger.warn("Token volatility/liquidity delta features (D30-D32) are using default/placeholder values for ESP input.");
+        for (let i = 0; i < 3; i++) { // Assuming max 3 tokens considered for general volatility
+            features[`tokenVolatility_StdDevPct_1min_Token${i}`] = 0;
+            features[`tokenVolatility_StdDevPct_5min_Token${i}`] = 0;
+        }
+         for (let i = 0; i < opp.path.length; i++) { // For pools in path
+            features[`tokenLiquidityDeltaPct_5min_Pool${i}`] = 0;
+        }
+        features['isNewTokenPair_Opportunistic'] = opp.isOpportunistic || 0; // Assuming field in PotentialOpportunity
+
+
+        // E. Historical Performance Features - Placeholders for Phase 2 Alpha MVP
+        this.logger.warn("Historical bot performance features (E34-E38) are using default/placeholder values for ESP input.");
+        features['bot_HistoricalSuccessRate_SamePathSignature_LastHour'] = 0.5;
+        features['bot_HistoricalSuccessRate_SameStrategyType_LastHour'] = 0.5;
+        features['bot_AvgNetProfitUsd_SamePathSignature_Successful_LastDay'] = 0;
+        features['bot_RecentConsecutiveFailures_ThisStrategy'] = 0;
+        features['bot_RelaySuccessRate_LastHour'] = 0.5;
+
+        // F. Time-Based Features - Pass the raw timestamp for ESPMLService to derive cyclical features
+        features['attemptTimestamp'] = opp.discoveryTimestamp; // Or Date.now() at the point of decision
+
+        // Ensure all expected features are present, filling with default if absolutely necessary
+        // This is more of a safeguard; ideally, all are mapped above.
+        for (const fName of expectedFeatureOrder) {
+            if (!(fName in features)) {
+                // This case means the feature was in feature_columns_ordered from Python,
+                // but not explicitly mapped above. This indicates an INCOMPLETE MAPPING.
+                logger.warn(`Feature '${fName}' was expected by model but not explicitly assembled. Defaulting to 0. REVIEW MAPPING!`);
+                features[fName] = 0; // Default to 0, but this should be fixed by mapping all features.
+            }
+        }
+        return features;
     }
 
 
