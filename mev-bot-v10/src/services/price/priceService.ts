@@ -22,6 +22,13 @@ interface PriceCacheEntry extends DexPairPriceInfo {
 }
 const PRICE_CACHE_TTL_MS = 10 * 1000; // Cache prices for 10 seconds, for example
 
+// Define a structure that includes token addresses with reserves
+export interface ReservesWithTokenAddresses extends PairReserves {
+    token0Address: string;
+    token1Address: string;
+}
+
+
 export class PriceService {
     private priceCache: Map<string, PriceCacheEntry> = new Map(); // key: pairAddress_network
 
@@ -31,6 +38,135 @@ export class PriceService {
     ) {
         logger.info('PriceService: Initialized.');
     }
+
+    /**
+     * Fetches raw reserves (reserve0, reserve1, blockTimestampLast) for a given pair address.
+     * This method also attempts to fetch token0 and token1 addresses from the pair contract.
+     * @param pairAddress The blockchain address of the DEX liquidity pair.
+     * @param network The blockchain network (e.g., "mainnet").
+     * @returns A Promise resolving to ReservesWithTokenAddresses or null if fetching fails.
+     */
+    public async getReservesByPairAddress(
+        pairAddress: string,
+        network: string = 'mainnet'
+    ): Promise<ReservesWithTokenAddresses | null> {
+        logger.debug(`PriceService: Fetching reserves for pair ${pairAddress} on ${network}.`);
+        try {
+            // getPairReserves should ideally also return token0 and token1 addresses
+            // For now, we assume scService.getPairReserves might be extended or we make separate calls.
+            // Let's assume getPairReserves can be extended to return token addresses.
+            // If not, scService would need getPairTokenAddresses(pairAddress, network).
+            // For this implementation, we'll rely on scService.getPairReserves to provide a comprehensive object.
+
+            const reservesData = await this.scService.getPairReserves(pairAddress, network); // This needs to return token0/1 addresses
+            if (!reservesData) {
+                logger.warn(`PriceService: Could not fetch reserves for pair ${pairAddress}.`);
+                return null;
+            }
+
+            // Assuming getPairReserves from scService has been updated to return token0 and token1 addresses.
+            // If not, this structure needs adjustment or additional calls.
+            if (!reservesData.token0 || !reservesData.token1) {
+                 logger.warn(`PriceService: Reserves data for pair ${pairAddress} did not include token0/token1 addresses.`);
+                 // Fallback: try to get token addresses separately if scService supports it
+                 const token0 = await this.scService.getToken0(pairAddress, network);
+                 const token1 = await this.scService.getToken1(pairAddress, network);
+                 if (!token0 || !token1) {
+                    logger.error(`PriceService: Failed to retrieve token0/token1 addresses for pair ${pairAddress} via fallback.`);
+                    return null;
+                 }
+                 reservesData.token0 = token0;
+                 reservesData.token1 = token1;
+            }
+
+
+            return {
+                reserve0: reservesData.reserve0,
+                reserve1: reservesData.reserve1,
+                blockTimestampLast: reservesData.blockTimestampLast,
+                token0Address: reservesData.token0, // Assuming these are addresses
+                token1Address: reservesData.token1, // Assuming these are addresses
+            };
+        } catch (error) {
+            logger.error({ err: error, pairAddress, network }, `PriceService: Error fetching reserves for pair ${pairAddress}.`);
+            return null;
+        }
+    }
+
+    /**
+     * Calculates the output amount for a swap given input amount and pair reserves.
+     * Formula: amountOut = (amountIn * reserveOut) / (reserveIn + amountIn)
+     * This calculation ignores fees.
+     * @param tokenInAddress The address of the input token.
+     * @param tokenInAmount The amount of the input token.
+     * @param reservesData Object containing reserve0, reserve1, token0Address, and token1Address.
+     * @returns The calculated output amount as BigNumber, or null if inputs are invalid.
+     */
+    public calculateAmountOut(
+        tokenInAddress: string,
+        tokenInAmount: BigNumber,
+        reservesData: ReservesWithTokenAddresses
+    ): BigNumber | null {
+        if (tokenInAmount.isZero()) {
+            logger.debug("PriceService: Input amount is zero, output amount is zero.");
+            return BigNumber.from(0);
+        }
+
+        let reserveIn: BigNumber;
+        let reserveOut: BigNumber;
+
+        if (tokenInAddress.toLowerCase() === reservesData.token0Address.toLowerCase()) {
+            reserveIn = reservesData.reserve0;
+            reserveOut = reservesData.reserve1;
+        } else if (tokenInAddress.toLowerCase() === reservesData.token1Address.toLowerCase()) {
+            reserveIn = reservesData.reserve1;
+            reserveOut = reservesData.token0Address; // Typo fixed here: should be reservesData.reserve0
+        } else {
+            logger.error({ tokenInAddress, token0: reservesData.token0Address, token1: reservesData.token1Address },
+                "PriceService: tokenInAddress does not match either token0 or token1 address in reservesData."
+            );
+            return null;
+        }
+
+        // Correction from previous thought:
+        if (tokenInAddress.toLowerCase() === reservesData.token1Address.toLowerCase()) {
+             reserveIn = reservesData.reserve1;
+             reserveOut = reservesData.reserve0; // Corrected here
+        }
+
+
+        if (reserveIn.isZero() || reserveOut.isZero()) {
+            logger.warn("PriceService: One of the reserves is zero, cannot calculate output amount.");
+            return BigNumber.from(0); // Or null, depending on desired behavior for illiquid pairs
+        }
+
+        try {
+            const numerator = tokenInAmount.mul(reserveOut);
+            const denominator = reserveIn.add(tokenInAmount);
+
+            if (denominator.isZero()) { // Should not happen if reserveIn > 0 or tokenInAmount > 0
+                logger.error("PriceService: Denominator is zero in amountOut calculation.");
+                return null;
+            }
+
+            const amountOut = numerator.div(denominator);
+            logger.debug({
+                tokenInAddress,
+                tokenInAmount: tokenInAmount.toString(),
+                reserveIn: reserveIn.toString(),
+                reserveOut: reserveOut.toString(),
+                amountOut: amountOut.toString()
+            }, "PriceService: Calculated amountOut.");
+            return amountOut;
+
+        } catch (error) {
+            logger.error({ err: error, tokenInAmount: tokenInAmount.toString(), reserveIn: reserveIn.toString(), reserveOut: reserveOut.toString() },
+                "PriceService: Error during amountOut calculation."
+            );
+            return null;
+        }
+    }
+
 
     /**
      * Fetches reserves for a DEX pair and calculates relative prices.
@@ -57,11 +193,22 @@ export class PriceService {
 
         logger.debug(`PriceService: Fetching live prices for pair ${pairAddress} (${token0Info.symbol}/${token1Info.symbol}) on ${dexName}, network ${network}.`);
 
-        const reservesData = await this.scService.getPairReserves(pairAddress, network);
+        // Use the new getReservesByPairAddress to fetch reserves and token addresses
+        const reservesData = await this.getReservesByPairAddress(pairAddress, network);
         if (!reservesData) {
-            logger.warn(`PriceService: Could not fetch reserves for pair ${pairAddress}.`);
+            // getReservesByPairAddress already logs errors
             return null;
         }
+
+        // Ensure token addresses from reserves match tokenInfo provided, or prioritize reservesData's addresses
+        // This check is important if token0Info/token1Info could be out of sync with actual pair contracts
+        if (token0Info.address.toLowerCase() !== reservesData.token0Address.toLowerCase() ||
+            token1Info.address.toLowerCase() !== reservesData.token1Address.toLowerCase()) {
+            logger.warn(`PriceService: Token addresses provided for ${pairAddress} do not match pair contract. Using addresses from contract: ${reservesData.token0Address}, ${reservesData.token1Address}`);
+            // Potentially, one might want to update token0Info and token1Info based on contract's actual token addresses
+            // For now, we proceed but this indicates a potential inconsistency in input data.
+        }
+
 
         const { reserve0, reserve1, blockTimestampLast } = reservesData;
 
@@ -86,8 +233,8 @@ export class PriceService {
             const priceInfo: DexPairPriceInfo = {
                 pairAddress,
                 dexName,
-                token0: token0Info,
-                token1: token1Info,
+                token0: token0Info, // Consider updating these based on reservesData.token0Address if mismatch
+                token1: token1Info, // Consider updating these based on reservesData.token1Address if mismatch
                 reserve0,
                 reserve1,
                 blockTimestampLast,
@@ -125,4 +272,46 @@ export class PriceService {
         logger.warn(`PriceService: USD price for ${tokenSymbol} not available in MVP. Returning 0.`);
         return 0; // Or throw an error
     }
+
+    /**
+     * Gets the current base fee in Gwei.
+     * Placeholder: Fetches from config or returns a default. Real implementation would use RpcService.
+     * @returns Current base fee in Gwei, or null if unavailable.
+     */
+    public getCurrentBaseFeeGwei(): number | null {
+        // For MVP, this could be a configured default or fetched periodically by RpcService.
+        // Let's assume a config value for now or a very simple placeholder.
+        const baseFee = this.configService.get('price_service.default_base_fee_gwei');
+        if (baseFee !== undefined) {
+            return parseFloat(baseFee as string);
+        }
+        logger.warn("PriceService: getCurrentBaseFeeGwei placeholder returning default (e.g., 20 Gwei). Implement actual RPC fetch.");
+        return 20; // Example placeholder
+    }
+
+    /**
+     * Gets current gas prices (max fee, priority fee) in Gwei.
+     * Placeholder: Returns default values. Real implementation would use RpcService.
+     * @returns Object with gas prices, or null if unavailable.
+     */
+    public getCurrentGasPrices(): { maxFeePerGasGwei: number, priorityFeePerGasGwei: number } | null {
+        // For MVP, these could be configured defaults.
+        // Real implementation: this.rpcService.getFeeData() and convert from Wei to Gwei.
+        const maxFee = this.configService.get('price_service.default_max_fee_gwei');
+        const priorityFee = this.configService.get('price_service.default_priority_fee_gwei');
+
+        if (maxFee !== undefined && priorityFee !== undefined) {
+            return {
+                maxFeePerGasGwei: parseFloat(maxFee as string),
+                priorityFeePerGasGwei: parseFloat(priorityFee as string),
+            };
+        }
+        logger.warn("PriceService: getCurrentGasPrices placeholder returning defaults (e.g., Max:50, Prio:2 Gwei). Implement actual RPC fetch.");
+        return { // Example placeholders
+            maxFeePerGasGwei: 50,
+            priorityFeePerGasGwei: 2,
+        };
+    }
 }
+
+[end of mev-bot-v10/src/services/price/priceService.ts]

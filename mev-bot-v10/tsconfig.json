@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "commonjs",
-    "lib": ["ES2020"],
+    "lib": ["ES2020", "DOM"],
     "declaration": true,
     "strict": true,
     "noImplicitAny": true,
@@ -20,17 +20,17 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-
-    /* --- PATH ALIAS CONFIGURATION --- */
-    "baseUrl": "./src",  /* This is the crucial part that was likely missing or wrong. */
+    "baseUrl": ".", // Changed from "./src" to "." (project root)
     "paths": {
-      "@core/*": ["core/*"],
-      "@services/*": ["services/*"],
-      "@arbitrage/*": ["arbitrage/*"],
-      "@utils/*": ["utils/*"],
-      "@shared/*": ["../../shared/*"] /* This allows importing from the shared folder */
+      "@core/*": ["src/core/*"],       // Paths are now relative to project root
+      "@services/*": ["src/services/*"],
+      "@arbitrage/*": ["src/arbitrage/*"],
+      "@utils/*": ["src/utils/*"],
+      "@shared/*": ["shared/*"],       // Path to shared is now direct from project root
+      "@interfaces/*": ["src/interfaces/*"], // Added for consistency from previous plan
+      "@abis/*": ["src/abis/*"]             // Added for consistency from previous plan
     }
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "shared/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }

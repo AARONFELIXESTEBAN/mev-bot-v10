@@ -1,23 +1,25 @@
-import { SimulationResult } from '@services/simulation/simulationService';
-import { DataCollectionService as FirestoreService } from '@core/dataCollection/firestoreService';
-import { getLogger } from '@core/logger/loggerService'; // Removed pino import
+// Placeholder for DEX Arbitrage Strategy Logic (including Paper Trading Module)
+import { SimulationResult } from '@services/simulation/simulationService'; // Updated path
+import { DataCollectionService as FirestoreService } from '@core/dataCollection/firestoreService'; // Updated import and aliased
+import { getLogger } from '@core/logger/loggerService'; // Changed logger import
+import { type Logger as PinoLogger } from 'pino'; // Added PinoLogger type import
 import { ethers } from 'ethers';
 
 export interface PaperTrade {
     id: string;
-    opportunityPathId: string; // Changed from opportunityPathName to opportunityPathId
-    simulatedNetProfitBaseToken: string;
-    netProfitUsd: number;
-    amountInStartToken: string;
-    simulatedAmountOutEndToken: string;
-    totalGasCostEstimateBaseToken: string;
-    simulationTimestamp: number;
-    pathId: string;
+    opportunityId: string; // Changed from opportunityPathName
+    simulatedNetProfitBaseToken: string; // Store formatted string from simulation.netProfitBaseToken
+    netProfitUsd: number; // from simulation.netProfitUsd
+    amountInStartToken: string; // Store formatted string from simulation.opportunity.estimatedAmountInStartToken or simulation.amountInLeg1
+    simulatedAmountOutEndToken: string; // Store formatted string from simulation.amountOutLeg2
+    totalGasCostEstimateBaseToken: string; // Store formatted string from simulation.estimatedGasCostBaseToken
+    simulationTimestamp: number; // from simulation.simulationTimestamp
+    pathId: string; // from simulation.pathId
 }
 
 export class DexArbitrageStrategy {
-    private logger: ReturnType<typeof getLogger>; // Use ReturnType to infer logger type
-    private firestoreService: FirestoreService;
+    private logger: PinoLogger; // Changed logger type to PinoLogger
+    private firestoreService: FirestoreService; // Type remains FirestoreService due to alias
     private paperTradeCollection: string;
     private virtualPortfolio: { [tokenAddress: string]: ethers.BigNumber };
     private initialPortfolio: { [tokenAddress: string]: string };
@@ -54,7 +56,7 @@ export class DexArbitrageStrategy {
 
     async executePaperTrade(simulation: SimulationResult): Promise<void> {
         if (!simulation.isProfitable) {
-            this.logger.info({ pathId: simulation.pathId }, "Strategy: Skipping non-profitable simulation.");
+            this.logger.info({ opportunityId: simulation.opportunity.id, pathId: simulation.pathId }, "Strategy: Skipping non-profitable simulation.");
             return;
         }
 
@@ -68,11 +70,10 @@ export class DexArbitrageStrategy {
 
         const baseTokenDecimals = simulation.opportunity.tokenPath[0].decimals;
         const endTokenDecimals = simulation.opportunity.tokenPath[2].decimals;
-
-        const tradeId = `${simulation.pathId}-${simulation.simulationTimestamp}-${ethers.utils.formatUnits(simulation.amountInLeg1, baseTokenDecimals).slice(-6)}`;
+        const tradeId = `${simulation.opportunity.id}-${simulation.simulationTimestamp}-${ethers.utils.formatUnits(simulation.amountInLeg1, baseTokenDecimals).slice(-6)}`;
         const paperTrade: PaperTrade = {
             id: tradeId,
-            opportunityPathId: simulation.pathId, // Changed from opportunityPathName to opportunityPathId
+            opportunityId: simulation.opportunity.id,
             simulatedNetProfitBaseToken: ethers.utils.formatUnits(simulation.netProfitBaseToken, baseTokenDecimals),
             netProfitUsd: simulation.netProfitUsd,
             amountInStartToken: ethers.utils.formatUnits(simulation.amountInLeg1, baseTokenDecimals),
