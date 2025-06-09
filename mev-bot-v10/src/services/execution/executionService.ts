@@ -146,8 +146,6 @@ export class ExecutionService {
         }
 
         try {
-            // SIMPLIFIED: Construct a single transaction representing the first leg for testing the pipeline.
-            // A real multi-leg execution requires an execution contract or careful sequencing.
             const firstLegSim = finalSimulatedPathSegments[0];
             const segment1 = firstLegSim.segment;
             const routerAddress1 = this.configService.get(`opportunity_service.dex_routers.${segment1.dexName}`) as string;
@@ -157,18 +155,15 @@ export class ExecutionService {
 
             let txData: string;
             let txValue: BigNumber = BigNumber.from(0);
-            const amountInLeg1 = opportunity.entryAmountBase; // Amount for the first leg
+            const amountInLeg1 = opportunity.entryAmountBase;
 
-            // Assuming base token is WETH and it's an ETH-in swap if path starts with native ETH placeholder
-            if (segment1.tokenInAddress.toLowerCase() === this.configService.get('opportunity_service.base_token_address')?.toLowerCase() &&
-                opportunity.entryTokenAddress.toLowerCase() === this.configService.get('opportunity_service.base_token_address')?.toLowerCase()) { // WETH -> TokenB
-
-                // This requires WETH to be approved to the router. For MVP, assume this is handled externally.
-                // Or, if entryAmountBase was from native ETH, this would be swapExactETHForTokens
-                const isNativeEthIn = opportunity.path[0].tokenInAddress.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
+            const baseTokenAddr = this.configService.get('opportunity_service.base_token_address')?.toLowerCase();
+            const isNativeEthIn = opportunity.path[0].tokenInAddress.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
                                    opportunity.path[0].tokenInAddress.toLowerCase() === "0x0000000000000000000000000000000000000000";
 
-                if (isNativeEthIn) {
+            if (segment1.tokenInAddress.toLowerCase() === baseTokenAddr &&
+                opportunity.entryTokenAddress.toLowerCase() === baseTokenAddr) {
+                if (isNativeEthIn) { // Handling case where WETH is base, but input is ETH
                      txData = routerInterface1.encodeFunctionData(
                         "swapExactETHForTokens",
                         [
@@ -179,7 +174,7 @@ export class ExecutionService {
                         ]
                     );
                     txValue = amountInLeg1;
-                } else { // swapExactTokensForTokens
+                } else { // WETH -> TokenB (swapExactTokensForTokens)
                     txData = routerInterface1.encodeFunctionData(
                         "swapExactTokensForTokens",
                         [
@@ -192,7 +187,6 @@ export class ExecutionService {
                     );
                 }
             } else {
-                // Other scenarios (e.g. TokenA -> TokenB where TokenA is not base) are more complex for direct execution
                 this.logger.error("Execution for non-base-token entry or complex paths not fully implemented for direct router calls.");
                 return { success: false, error: "Complex path execution not implemented without execution contract." };
             }
@@ -210,7 +204,7 @@ export class ExecutionService {
                 maxPriorityFeePerGas: gasParams.maxPriorityFeePerGas,
                 nonce: txNonce,
                 chainId: chainId,
-                type: 2 // EIP-1559
+                type: 2
             };
 
             this.logger.info({ transaction: {to:tx.to, value:tx.value?.toString(), nonce:tx.nonce, maxFeePerGas:tx.maxFeePerGas?.toString(), maxPriorityFeePerGas:tx.maxPriorityFeePerGas?.toString()} }, "Prepared transaction for signing.");
@@ -245,15 +239,13 @@ export class ExecutionService {
 
             if ('error' in bundleSubmission) {
                 this.logger.error({ err: bundleSubmission.error }, "Flashbots bundle submission error.");
-                await this.synchronizeNonce('pending'); // Nonce might not have been consumed
+                await this.synchronizeNonce('pending');
                 return { success: false, error: `Flashbots error: ${bundleSubmission.error.message}` };
             }
 
             const txHash = ethers.utils.keccak256(signedTx);
             this.logger.info({ bundleResult: bundleSubmission, txHashCalculated: txHash }, "Flashbots bundle submitted.");
 
-            // For Phase 2 Alpha, we fire and forget for Flashbots.
-            // Proper monitoring would involve bundleSubmission.wait() or checking bundle stats.
             return { success: true, transactionHash: txHash, bundleHash: bundleSubmission.bundleHash, message: `Submitted to Flashbots for block ${targetBlock}.` };
 
         } catch (error: any) {
@@ -280,19 +272,15 @@ export class ExecutionService {
     }
 
     private getRouterAbi(dexName: string): any {
-        // This should ideally use scService.getAbi(abiName)
-        // For Phase 2 Alpha, let's keep it simple.
-        // IMPORTANT: This ABI is minimal and only for example. Real ABIs should be loaded properly.
         const uniswapV2RouterABI = [
             "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
             "function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) external payable returns (uint[] memory amounts)"
-            // Add other functions like swapTokensForExactTokens, swapETHForExactTokens etc. if needed
         ];
         if (dexName.toLowerCase().includes("uniswap") || dexName.toLowerCase().includes("sushi")) {
             return uniswapV2RouterABI;
         }
         this.logger.error(`No ABI found for DEX: ${dexName}. Using default UniswapV2Router ABI as a fallback.`);
-        return uniswapV2RouterABI; // Fallback, might not be correct
+        return uniswapV2RouterABI;
     }
 }
 ```

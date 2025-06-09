@@ -5,10 +5,12 @@
     "lib": ["ES2020", "DOM"],                 /* Specify library files to be included in the compilation. */
     "declaration": true,                   /* Generates corresponding '.d.ts' file. */
     "outDir": "./dist",                       /* Redirect output structure to the directory. */
-    "rootDir": "./src",                    /* Specify the root directory of input files. Use to control the output directory structure with --outDir. */
+    // "rootDir": "./src",                 /* Specify the root directory of input files. Use to control the output directory structure with --outDir. */
+    "rootDirs": ["./src", "../mev-bot-v10/shared"], /* Specify multiple root directories */
     "baseUrl": "./",                          /* Base directory to resolve non-absolute module names. */
     "paths": {                                /* A series of entries which re-map imports to lookup locations relative to the 'baseUrl'. */
-      "@shared/*": ["../mev-bot-v10/shared/*"]
+      "@shared/*": ["../mev-bot-v10/shared/*"],
+      "ethers": ["./node_modules/ethers"]      /* Attempt to force resolution for shared files */
     },
     "strict": true,                           /* Enable all strict type-checking options. */
     "esModuleInterop": true,                  /* Enables emit interoperability between CommonJS and ES Modules via creation of namespace objects for all imports. Implies 'allowSyntheticDefaultImports'. */
@@ -17,6 +19,6 @@
     "resolveJsonModule": true,                /* Include modules imported with .json extension */
     "moduleResolution": "node"            /* Specify module resolution strategy: 'node' (Node.js) or 'classic' (TypeScript pre-1.6). */
   },
-  "include": ["src/**/*"],                    /* Specifies an array of filenames or patterns to include in the program. */
+  "include": ["src/**/*", "../mev-bot-v10/shared/**/*"], /* Added shared directory to include */
   "exclude": ["node_modules", "dist", "tests"] /* Specifies an array of filenames or patterns that should be skipped when resolving include. */
 }

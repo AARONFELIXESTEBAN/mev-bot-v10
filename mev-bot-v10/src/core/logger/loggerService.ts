@@ -5,9 +5,12 @@ import { AppConfig } from '../config/configService'; // Assuming AppConfig is ex
 // or a class if more complex logger management is needed.
 // For MVP, a pre-configured instance is often sufficient.
 
-let loggerInstance: pino.Logger;
+// Define and export the PinoLogger type alias
+export type PinoLogger = pino.Logger;
 
-export function initializeLogger(config: Pick<AppConfig, 'logLevel' | 'nodeEnv'>): pino.Logger {
+let loggerInstance: PinoLogger; // Use the exported type
+
+export function initializeLogger(config: Pick<AppConfig, 'logLevel' | 'nodeEnv'>): PinoLogger { // Use the exported type
     const loggerOptions: pino.LoggerOptions = {
         level: config.logLevel || 'info',
         formatters: {
@@ -48,12 +51,12 @@ export function initializeLogger(config: Pick<AppConfig, 'logLevel' | 'nodeEnv'>
  * Returns the global logger instance.
  * Ensure initializeLogger has been called once at application startup.
  */
-export function getLogger(): pino.Logger {
+export function getLogger(): PinoLogger { // Use the exported type
     if (!loggerInstance) {
         // Fallback to a default logger if not initialized, but warn.
         // This is not ideal; initialization should be guaranteed.
         console.warn("Logger accessed before initialization. Using default Pino instance with 'info' level.");
-        loggerInstance = pino({ level: 'info' });
+        loggerInstance = pino({ level: 'info' }); // This will be pino.Logger, assignable to PinoLogger
     }
     return loggerInstance;
 }
@@ -67,3 +70,4 @@ export function getLogger(): pino.Logger {
 //   transport: dev ? { target: 'pino-pretty', options: { colorize: true } } : undefined,
 // });
 // export default logger;
+```

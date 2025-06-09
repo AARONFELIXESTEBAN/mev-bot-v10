@@ -184,9 +184,11 @@ export class SimulationService {
         if (gasParamsOverride) {
             gasPriceToUse = gasParamsOverride.maxFeePerGas; // Use the effective gas price for cost estimation
         } else {
-            const feeData = await this.rpcService.getFeeData(network);
-            if (!feeData || !feeData.gasPrice) { // Using gasPrice for simplicity if no override
-                logger.warn({ pathId: opportunity.id }, "SimulationService: Could not retrieve gas price for cost estimation. Using zero cost.");
+            // const feeData = await this.rpcService.makeRpcCall(network, 'http', p => p.getFeeData()); // Old way
+            const feeData = await this.rpcService.getFeeData(network); // New way
+            if (!feeData || !feeData.gasPrice) { // Using gasPrice for simplicity if no override (legacy for non-EIP1559)
+                                                 // For EIP-1559, lastBaseFeePerGas + maxPriorityFeePerGas would be more accurate if not using gasParamsOverride
+                logger.warn({ pathId: opportunity.id }, "SimulationService: Could not retrieve gasPrice from feeData for cost estimation. Using zero cost.");
                 // Return error or zero cost based on strictness
                 return {
                     opportunity, pathId: opportunity.id, simulationTimestamp: simTime, isProfitable: false,

@@ -194,6 +194,20 @@ export class RpcService {
         return null; // Should not be reached if retries > 0
     }
 
+    public async getFeeData(network: string, retries: number = 3): Promise<ethers.providers.FeeData | null> {
+        logger.debug({ network }, `RpcService: getFeeData called for network ${network}`);
+        const feeData = await this.makeRpcCall(
+            network,
+            'http', // Fee data is typically fetched via HTTP RPC
+            (provider) => provider.getFeeData(),
+            retries
+        );
+        if (!feeData) {
+            logger.warn(`RpcService: getFeeData returned null for network ${network} after ${retries} retries.`);
+        }
+        return feeData;
+    }
+
     public closeAllWebSocketProviders(): void {
         logger.info("RpcService: Attempting to close all active WebSocket providers...");
         this.webSocketProviders.forEach((provider, network) => {
