@@ -61,9 +61,7 @@ export class AdvancedSlippageControlModule {
 
 
         this.logger.info(
-            `Calculated amountOutMin for segment ${segment.tokenInSymbol}->${segment.tokenOutSymbol} on ${segment.dexName}: ` +
-            `${ethers.utils.formatUnits(amountOutMin, tokenOutDecimals)} ` +
-            `(Expected: ${ethers.utils.formatUnits(expectedAmountOut, tokenOutDecimals)}, Slippage: ${slippageToApplyBps} bps)`
+            `Calculated amountOutMin for segment ${segment.tokenInSymbol}->${segment.tokenOutSymbol} on ${segment.dexName}: ${ethers.utils.formatUnits(amountOutMin, tokenOutDecimals)} (Expected: ${ethers.utils.formatUnits(expectedAmountOut, tokenOutDecimals)}, Slippage: ${slippageToApplyBps} bps)`
         );
         return amountOutMin;
     }
